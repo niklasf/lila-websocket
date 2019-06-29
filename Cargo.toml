@@ -1,0 +1,11 @@
+[package]
+name = "lila-socket"
+version = "0.1.0"
+authors = ["Niklas Fiekas <niklas.fiekas@backscattering.de>"]
+edition = "2018"
+
+[dependencies]
+websocket = "0.22.4"
+tokio = "0.1.21"
+futures = "0.1.28"
+
