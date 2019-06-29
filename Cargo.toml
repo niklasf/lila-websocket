@@ -8,4 +8,5 @@ edition = "2018"
 websocket = "0.22.4"
 tokio = "0.1.21"
 futures = "0.1.28"
+cookie = "0.12.0"
 
