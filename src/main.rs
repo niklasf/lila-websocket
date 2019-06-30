@@ -60,7 +60,8 @@ fn main() {
 
                 stream
                     .map(|v| {
-                        dbg!(v)
+                        dbg!(v);
+                        OwnedMessage::Text("0".to_owned())
                     })
                     .forward(sink)
             });
