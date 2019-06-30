@@ -3,7 +3,10 @@ const socket = new WebSocket('ws://localhost:9664');
 socket.onmessage = function(e) {
   console.log(e);
 };
-socket.onconnect = function(e) {
+socket.onopen = function(e) {
   console.log(e);
 };
+socket.onclose = function(e) {
+  console.log(e);
+}
 </script>
