@@ -4,6 +4,7 @@ use websocket::r#async::Server;
 use websocket::server::InvalidConnection;
 use websocket::header;
 use websocket::header::{Headers};
+use websocket::message::OwnedMessage;
 
 use mongodb::ThreadedClient;
 
@@ -43,7 +44,7 @@ fn main() {
 
     let f = server
         .incoming()
-        .inspect_err(|err| println!("Error: ..."))
+        .inspect_err(|e| println!("Error: {:?}", e.error))
         .then(|r| future::ok(stream::iter_ok::<_, ()>(r)))
         .flatten()
         .for_each(move |(upgrade, addr)| {
@@ -54,7 +55,9 @@ fn main() {
             }
 
             let f = upgrade.accept().and_then(|(s, _)| {
-                let (sink, stream) = s.split();
+                let (mut sink, stream) = s.split();
+                sink.start_send(OwnedMessage::Text("foo".to_owned()));
+
                 stream
                     .map(|v| {
                         dbg!(v)
