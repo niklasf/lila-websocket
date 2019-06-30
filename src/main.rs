@@ -48,11 +48,15 @@ fn main() {
         .then(|r| future::ok(stream::iter_ok::<_, ()>(r)))
         .flatten()
         .for_each(move |(upgrade, addr)| {
-            let sid = dbg!(session_id(&upgrade.request.headers));
+            let sid = match session_id(&upgrade.request.headers) {
+                Some(sid) => sid,
+                None => {
+                    upgrade.reject();
+                    return Ok(());
+                }
+            };
 
-            if let Some(sid) = sid {
-                dbg!(user_id(&sid));
-            }
+            dbg!(user_id(&sid));
 
             let f = upgrade.accept().and_then(|(s, _)| {
                 let (mut sink, stream) = s.split();
