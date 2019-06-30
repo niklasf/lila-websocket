@@ -1,0 +1,9 @@
+<script>
+const socket = new WebSocket('ws://localhost:9664');
+socket.onmessage = function(e) {
+  console.log(e);
+};
+socket.onconnect = function(e) {
+  console.log(e);
+};
+</script>
