@@ -58,6 +58,10 @@ fn main() {
     let mut runtime = tokio::runtime::Builder::new().build().unwrap();
     let executor = runtime.executor();
 
+    let redis = runtime.block_on(
+        redis_async::client::paired::paired_connect(&"127.0.0.1:6379".parse().unwrap())
+    ).unwrap();
+
     let f = pubsub::pubsub_connect(&"127.0.0.1:6379".parse().unwrap())
         .and_then(|redis| redis.subscribe("res"))
         .map_err(|e| panic!("redis: {:?}", e))
