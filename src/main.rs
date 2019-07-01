@@ -59,10 +59,14 @@ fn main() {
     let executor = runtime.executor();
 
     let f = pubsub::pubsub_connect(&"127.0.0.1:6379".parse().unwrap())
-        .map(|f| {
-        })
-        .map_err(|e| panic!("redis: {:?}", e));
-
+        .and_then(|redis| redis.subscribe("res"))
+        .map_err(|e| panic!("redis: {:?}", e))
+        .and_then(|chan| {
+            chan.for_each(|msg| {
+                dbg!(msg);
+                Ok(())
+            })
+        });
 
     executor.spawn(f);
 
