@@ -54,6 +54,11 @@ fn user_id(cookie: &SessionCookie) -> Option<String> {
         .and_then(|doc| doc.get_str("user").map(|s| s.to_owned()).ok())
 }
 
+struct Connection {
+    user_id: Option<String>,
+//  sink: Sink,
+}
+
 fn main() {
     let mut runtime = tokio::runtime::Builder::new().build().unwrap();
     let executor = runtime.executor();
@@ -98,9 +103,10 @@ fn main() {
                 sink.start_send(OwnedMessage::Text("foo".to_owned())); // TODO: await
 
                 stream
-                    .map(|v| {
+                    .take_while(|m| Ok(!m.is_close()))
+                    .filter_map(|v| {
                         dbg!(v);
-                        OwnedMessage::Text("0".to_owned())
+                        Some(OwnedMessage::Text("0".to_owned()))
                     })
                     .forward(sink)
             });
