@@ -6,9 +6,6 @@ use websocket::header;
 use websocket::header::{Headers};
 use websocket::message::OwnedMessage;
 
-use mongodb::ThreadedClient as _;
-use mongodb::db::ThreadedDatabase as _;
-
 use redis_async::resp_array;
 use redis_async::client::pubsub;
 
@@ -33,16 +30,49 @@ use std::sync::Arc; */
 // Global stuff:
 // - Redis connection
 // - By user id:
-//   * number of connections
+//   * number of connections (implied by list below)
+//   * list of senders
 // - By token:
 //   * sender
 
+use mongodb::ThreadedClient as _;
+use mongodb::db::ThreadedDatabase as _;
+
+use cookie::Cookie;
+
 use mio_extras::timer::Timeout;
+
+use serde::{Serialize, Deserialize};
 
 use ws::{Handshake, Handler, Frame, Sender, Message, CloseCode};
 use ws::util::Token;
 
+use std::str;
+
 const IDLE_TIMEOUT: Token = Token(1);
+
+#[derive(Debug, Deserialize)]
+struct SessionCookie {
+    #[serde(rename = "sessionId")]
+    session_id: String,
+}
+
+fn session_id(lila2: &str) -> Option<SessionCookie> {
+    serde_urlencoded::from_str(lila2).ok()
+}
+
+fn user_id(cookie: &SessionCookie) -> Option<String> {
+    let mut query = mongodb::Document::new();
+    query.insert("_id", &cookie.session_id);
+
+    mongodb::Client::connect("127.0.0.1", 27017)
+        .expect("mongodb connection")
+        .db("lichess")
+        .collection("security")
+        .find_one(Some(query), None)
+        .expect("query by sid")
+        .and_then(|doc| doc.get_str("user").map(|s| s.to_owned()).ok())
+}
 
 fn main() {
     ws::listen("127.0.0.1:9664", |sender| {
@@ -62,8 +92,20 @@ struct Server {
 }
 
 impl Handler for Server {
-    fn on_open(&mut self, _: Handshake) -> ws::Result<()> {
-        println!("on open");
+    fn on_open(&mut self, handshake: Handshake) -> ws::Result<()> {
+        let uid = handshake.request.header("cookie")
+            .and_then(|h| str::from_utf8(h).ok())
+            .and_then(|h| Cookie::parse(h).ok())
+            .and_then(|c| {
+                let (name, value) = c.name_value();
+                Some(value.to_owned()).filter(|_| name == "lila2")
+            })
+            .and_then(|s| session_id(&s))
+            .as_ref()
+            .and_then(user_id);
+
+        dbg!(uid);
+
         self.sender.timeout(10_000, IDLE_TIMEOUT)
     }
 
@@ -73,6 +115,7 @@ impl Handler for Server {
     }
 
     fn on_new_timeout(&mut self, event: Token, timeout: Timeout) -> ws::Result<()> {
+
         assert_eq!(event, IDLE_TIMEOUT);
         if let Some(old_timeout) = self.idle_timeout.take() {
             self.sender.cancel(old_timeout)?;
@@ -93,44 +136,7 @@ impl Handler for Server {
     }
 }
 
-/* #[derive(Debug, Deserialize)]
-struct SessionCookie {
-    #[serde(rename = "sessionId")]
-    session_id: String,
-}
-
-fn lila2(headers: &Headers) -> Option<String> {
-    let headers: &Vec<String> = headers.get::<header::Cookie>()?;
-
-    for header in headers {
-        let cookie = Cookie::parse(header).ok()?;
-        let (name, sid) = cookie.name_value();
-        if name == "lila2" {
-            return Some(sid.to_owned());
-        }
-    }
-
-    None
-}
-
-fn session_id(lila2: &str) -> Option<SessionCookie> {
-    serde_urlencoded::from_str(lila2).ok()
-}
-
-fn user_id(cookie: &SessionCookie) -> Option<String> {
-    let mut query = mongodb::Document::new();
-    query.insert("_id", &cookie.session_id);
-
-    mongodb::Client::connect("127.0.0.1", 27017)
-        .expect("mongodb connection")
-        .db("lichess")
-        .collection("security")
-        .find_one(Some(query), None)
-        .expect("query by sid")
-        .and_then(|doc| doc.get_str("user").map(|s| s.to_owned()).ok())
-}
-
-struct Connection {
+/* struct Connection {
     user_id: Option<String>,
 //  sink: Sink,
 }
