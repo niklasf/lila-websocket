@@ -1,4 +1,4 @@
-use cookie::Cookie;
+/* use cookie::Cookie;
 use websocket::r#async::Server;
 
 use websocket::server::InvalidConnection;
@@ -18,7 +18,7 @@ use serde::{Serialize, Deserialize};
 use serde_json::Value as JsonValue;
 
 use std::str;
-use std::sync::Arc;
+use std::sync::Arc; */
 
 // -> site-in (to lila)
 // <- site-out (from lila)
@@ -30,7 +30,58 @@ use std::sync::Arc;
 //   }
 // }
 
-#[derive(Debug, Deserialize)]
+use mio_extras::timer::Timeout;
+
+use ws::{Handshake, Handler, Frame, Sender, Message};
+use ws::util::Token;
+
+const IDLE_TIMEOUT: Token = Token(1);
+
+fn main() {
+    ws::listen("127.0.0.1:9664", |sender| {
+        Server {
+            sender,
+            idle_timeout: None
+        }
+    }).expect("ws listen");
+}
+
+struct DefaultHandler;
+impl Handler for DefaultHandler { }
+
+struct Server {
+    sender: Sender,
+    idle_timeout: Option<Timeout>,
+}
+
+impl Handler for Server {
+    fn on_open(&mut self, _: Handshake) -> ws::Result<()> {
+        println!("on open");
+        self.sender.timeout(10_000, IDLE_TIMEOUT)
+    }
+
+    fn on_message(&mut self, msg: Message) -> ws::Result<()> {
+        dbg!(msg);
+        self.sender.send(Message::text("0"))
+    }
+
+    fn on_new_timeout(&mut self, event: Token, timeout: Timeout) -> ws::Result<()> {
+        assert_eq!(event, IDLE_TIMEOUT);
+        if let Some(old_timeout) = self.idle_timeout.take() {
+            self.sender.cancel(old_timeout)?;
+        }
+        self.idle_timeout = Some(timeout);
+        Ok(())
+    }
+
+    fn on_frame(&mut self, frame: Frame) -> ws::Result<Option<Frame>> {
+        println!("on frame");
+        self.sender.timeout(10_000, IDLE_TIMEOUT)?;
+        DefaultHandler.on_frame(frame)
+    }
+}
+
+/* #[derive(Debug, Deserialize)]
 struct SessionCookie {
     #[serde(rename = "sessionId")]
     session_id: String,
@@ -158,4 +209,4 @@ fn main() {
         });
 
     runtime.block_on(f).unwrap();
-}
+} */

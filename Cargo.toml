@@ -14,4 +14,6 @@ serde_urlencoded = "0.5.5"
 serde = { version = "1.0.94", features = ["derive"] }
 redis-async = "0.4.5"
 serde_json = "1.0.40"
+ws = "0.8.1"
+mio-extras = "2.0.5"
 
