@@ -14,7 +14,7 @@ use redis_async::client::pubsub;
 
 use futures::{Future, Sink, Stream, future, stream};
 
-use serde::Deserialize;
+use serde::{Serialize, Deserialize};
 use serde_json::Value as JsonValue;
 
 use std::str;
@@ -62,6 +62,21 @@ struct Connection {
 //  sink: Sink,
 }
 
+#[derive(Serialize)]
+struct Msg {
+    t: &'static str,
+    v: String,
+}
+
+impl Msg {
+    fn connect(uid: String) -> Msg {
+        Msg {
+            t: "connect",
+            v: uid,
+        }
+    }
+}
+
 fn main() {
     let mut runtime = tokio::runtime::Builder::new().build().unwrap();
     let executor = runtime.executor();
@@ -104,9 +119,15 @@ fn main() {
             let f = upgrade.accept().and_then(move |(s, _)| {
                 let (mut sink, stream) = s.split();
 
-                redis_inner.send_and_forget(resp_array!["PUBLISH", "chan", "conn"]);
+                if let Some(uid) = uid {
+                    redis_inner.send_and_forget(resp_array![
+                        "PUBLISH",
+                        "chan",
+                        serde_json::to_string(&Msg::connect(uid)).unwrap()
+                    ]);
+                }
 
-                sink.start_send(OwnedMessage::Text("foo".to_owned())); // TODO: await
+                //sink.start_send(OwnedMessage::Text("foo".to_owned())); // TODO: await
 
                 stream
                     .take_while(|m| Ok(!m.is_close()))
