@@ -19,8 +19,8 @@ use std::str;
 
 #[derive(Debug, Deserialize)]
 struct SessionCookie {
-    #[allow(non_snake_case)]
-    sessionId: String,
+    #[serde(rename = "sessionId")]
+    session_id: String,
 }
 
 fn lila2(headers: &Headers) -> Option<String> {
@@ -43,7 +43,7 @@ fn session_id(lila2: &str) -> Option<SessionCookie> {
 
 fn user_id(cookie: &SessionCookie) -> Option<String> {
     let mut query = mongodb::Document::new();
-    query.insert("_id", &cookie.sessionId);
+    query.insert("_id", &cookie.session_id);
 
     mongodb::Client::connect("127.0.0.1", 27017)
         .expect("mongodb connection")
