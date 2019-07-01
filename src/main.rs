@@ -47,6 +47,10 @@ use serde::{Serialize, Deserialize};
 use ws::{Handshake, Handler, Frame, Sender, Message, CloseCode};
 use ws::util::Token;
 
+use redis::RedisResult;
+use redis::Commands as _;
+use redis::ConnectionLike as _;
+
 use std::collections::HashMap;
 use std::str;
 use std::sync::{Arc, Mutex};
@@ -78,12 +82,19 @@ fn user_id(cookie: &SessionCookie) -> Option<String> {
 
 struct App {
     by_user: Mutex<HashMap::<String, Vec<Sender>>>,
+    redis: Mutex<redis::Connection>,
 }
 
 impl App {
     fn new() -> App {
+        let redis = redis::Client::open("redis://127.0.0.1/")
+            .expect("redis open")
+            .get_connection()
+            .expect("redis connection");
+
         App {
-            by_user: Mutex::new(HashMap::new())
+            by_user: Mutex::new(HashMap::new()),
+            redis: Mutex::new(redis),
         }
     }
 }
@@ -99,6 +110,10 @@ fn main() {
             idle_timeout: None
         }
     }).expect("ws listen");
+}
+
+fn publish_connect(con: &mut redis::Connection) -> RedisResult<()> {
+    con.publish("site-in", "connect")
 }
 
 struct DefaultHandler;
@@ -129,7 +144,11 @@ impl Handler for Server {
             by_user
                 .entry(uid.to_owned())
                 .and_modify(|v| v.push(self.sender.clone()))
-                .or_insert_with(|| vec![self.sender.clone()]);
+                .or_insert_with(|| {
+                    let mut redis = self.app.redis.lock().expect("lock redis");
+                    publish_connect(&mut redis).expect("publish connect");
+                    vec![self.sender.clone()]
+                });
         }
 
         self.sender.timeout(10_000, IDLE_TIMEOUT)
