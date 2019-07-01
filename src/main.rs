@@ -9,15 +9,17 @@ use websocket::message::OwnedMessage;
 use mongodb::ThreadedClient as _;
 use mongodb::db::ThreadedDatabase as _;
 
+use redis_async::client::pubsub;
+
 use futures::{Future, Sink, Stream, future, stream};
 
 use serde::Deserialize;
 
 use std::str;
-use std::borrow::Cow;
 
 #[derive(Debug, Deserialize)]
 struct SessionCookie {
+    #[allow(non_snake_case)]
     sessionId: String,
 }
 
@@ -55,6 +57,14 @@ fn user_id(cookie: &SessionCookie) -> Option<String> {
 fn main() {
     let mut runtime = tokio::runtime::Builder::new().build().unwrap();
     let executor = runtime.executor();
+
+    let f = pubsub::pubsub_connect(&"127.0.0.1:6379".parse().unwrap())
+        .map(|f| {
+        })
+        .map_err(|e| panic!("redis: {:?}", e));
+
+
+    executor.spawn(f);
 
     let server = Server::bind("127.0.0.1:9664", &tokio::reactor::Handle::default()).unwrap();
 
