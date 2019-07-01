@@ -47,7 +47,9 @@ use serde::{Serialize, Deserialize};
 use ws::{Handshake, Handler, Frame, Sender, Message, CloseCode};
 use ws::util::Token;
 
+use std::collections::HashMap;
 use std::str;
+use std::sync::{Arc, Mutex};
 
 const IDLE_TIMEOUT: Token = Token(1);
 
@@ -74,10 +76,26 @@ fn user_id(cookie: &SessionCookie) -> Option<String> {
         .and_then(|doc| doc.get_str("user").map(|s| s.to_owned()).ok())
 }
 
+struct App {
+    by_user: Mutex<HashMap::<String, Sender>>,
+}
+
+impl App {
+    fn new() -> App {
+        App {
+            by_user: Mutex::new(HashMap::new())
+        }
+    }
+}
+
 fn main() {
-    ws::listen("127.0.0.1:9664", |sender| {
+    let app = Arc::new(App::new());
+
+    ws::listen("127.0.0.1:9664", move |sender| {
         Server {
+            app: app.clone(),
             sender,
+            uid: None,
             idle_timeout: None
         }
     }).expect("ws listen");
@@ -87,13 +105,15 @@ struct DefaultHandler;
 impl Handler for DefaultHandler { }
 
 struct Server {
+    app: Arc<App>,
     sender: Sender,
+    uid: Option<String>,
     idle_timeout: Option<Timeout>,
 }
 
 impl Handler for Server {
     fn on_open(&mut self, handshake: Handshake) -> ws::Result<()> {
-        let uid = handshake.request.header("cookie")
+        self.uid = handshake.request.header("cookie")
             .and_then(|h| str::from_utf8(h).ok())
             .and_then(|h| Cookie::parse(h).ok())
             .and_then(|c| {
@@ -104,7 +124,10 @@ impl Handler for Server {
             .as_ref()
             .and_then(user_id);
 
-        dbg!(uid);
+        if let Some(ref uid) = self.uid {
+            let mut by_user = self.app.by_user.lock().expect("lock by_user");
+            by_user.insert(uid.to_owned(), self.sender.clone());
+        }
 
         self.sender.timeout(10_000, IDLE_TIMEOUT)
     }
@@ -115,7 +138,6 @@ impl Handler for Server {
     }
 
     fn on_new_timeout(&mut self, event: Token, timeout: Timeout) -> ws::Result<()> {
-
         assert_eq!(event, IDLE_TIMEOUT);
         if let Some(old_timeout) = self.idle_timeout.take() {
             self.sender.cancel(old_timeout)?;
