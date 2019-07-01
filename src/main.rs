@@ -77,7 +77,7 @@ fn user_id(cookie: &SessionCookie) -> Option<String> {
 }
 
 struct App {
-    by_user: Mutex<HashMap::<String, Sender>>,
+    by_user: Mutex<HashMap::<String, Vec<Sender>>>,
 }
 
 impl App {
@@ -125,11 +125,24 @@ impl Handler for Server {
             .and_then(user_id);
 
         if let Some(ref uid) = self.uid {
-            let mut by_user = self.app.by_user.lock().expect("lock by_user");
-            by_user.insert(uid.to_owned(), self.sender.clone());
+            let mut by_user = self.app.by_user.lock().expect("lock by_user for open");
+            by_user
+                .entry(uid.to_owned())
+                .and_modify(|v| v.push(self.sender.clone()))
+                .or_insert_with(|| vec![self.sender.clone()]);
         }
 
         self.sender.timeout(10_000, IDLE_TIMEOUT)
+    }
+
+    fn on_close(&mut self, _: CloseCode, _: &str) {
+        if let Some(uid) = self.uid.take() {
+            let mut by_user = self.app.by_user.lock().expect("lock by_user for close");
+            let entry = by_user.get_mut(&uid).expect("uid in map");
+            let len_before = entry.len();
+            entry.retain(|s| s.token() != self.sender.token());
+            assert_eq!(entry.len() + 1, len_before);
+        }
     }
 
     fn on_message(&mut self, msg: Message) -> ws::Result<()> {
