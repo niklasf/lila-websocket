@@ -32,7 +32,7 @@ use std::sync::Arc; */
 
 use mio_extras::timer::Timeout;
 
-use ws::{Handshake, Handler, Frame, Sender, Message};
+use ws::{Handshake, Handler, Frame, Sender, Message, CloseCode};
 use ws::util::Token;
 
 const IDLE_TIMEOUT: Token = Token(1);
@@ -72,6 +72,11 @@ impl Handler for Server {
         }
         self.idle_timeout = Some(timeout);
         Ok(())
+    }
+
+    fn on_timeout(&mut self, event: Token) -> ws::Result<()> {
+        assert_eq!(event, IDLE_TIMEOUT);
+        self.sender.close(CloseCode::Away)
     }
 
     fn on_frame(&mut self, frame: Frame) -> ws::Result<Option<Frame>> {
