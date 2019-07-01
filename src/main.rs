@@ -20,6 +20,16 @@ use serde_json::Value as JsonValue;
 use std::str;
 use std::sync::Arc;
 
+// -> site-in (to lila)
+// <- site-out (from lila)
+//
+// {
+//   path: /connect
+//   data: {
+//     user: revoof
+//   }
+// }
+
 #[derive(Debug, Deserialize)]
 struct SessionCookie {
     #[serde(rename = "sessionId")]
