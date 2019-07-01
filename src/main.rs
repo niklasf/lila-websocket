@@ -49,7 +49,6 @@ use ws::util::Token;
 
 use redis::RedisResult;
 use redis::Commands as _;
-use redis::ConnectionLike as _;
 
 use std::collections::HashMap;
 use std::str;
@@ -112,8 +111,24 @@ fn main() {
     }).expect("ws listen");
 }
 
-fn publish_connect(con: &mut redis::Connection) -> RedisResult<()> {
-    con.publish("site-in", "connect")
+#[derive(Serialize)]
+struct MsgConnect {
+    path: &'static str,
+    data: MsgConnectData,
+}
+
+#[derive(Serialize)]
+struct MsgConnectData {
+    user: String,
+}
+
+fn publish_connect(con: &mut redis::Connection, uid: String) -> RedisResult<()> {
+    con.publish("site-in", serde_json::to_string(&MsgConnect {
+        path: "/connect",
+        data: MsgConnectData {
+            user: uid
+        }
+    }).expect("serialize connect"))
 }
 
 struct DefaultHandler;
@@ -146,7 +161,7 @@ impl Handler for Server {
                 .and_modify(|v| v.push(self.sender.clone()))
                 .or_insert_with(|| {
                     let mut redis = self.app.redis.lock().expect("lock redis");
-                    publish_connect(&mut redis).expect("publish connect");
+                    publish_connect(&mut redis, uid.to_owned()).expect("publish connect");
                     vec![self.sender.clone()]
                 });
         }
