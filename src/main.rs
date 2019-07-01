@@ -9,13 +9,16 @@ use websocket::message::OwnedMessage;
 use mongodb::ThreadedClient as _;
 use mongodb::db::ThreadedDatabase as _;
 
+use redis_async::resp_array;
 use redis_async::client::pubsub;
 
 use futures::{Future, Sink, Stream, future, stream};
 
 use serde::Deserialize;
+use serde_json::Value as JsonValue;
 
 use std::str;
+use std::sync::Arc;
 
 #[derive(Debug, Deserialize)]
 struct SessionCookie {
@@ -63,9 +66,9 @@ fn main() {
     let mut runtime = tokio::runtime::Builder::new().build().unwrap();
     let executor = runtime.executor();
 
-    let redis = runtime.block_on(
+    let redis = Arc::new(runtime.block_on(
         redis_async::client::paired::paired_connect(&"127.0.0.1:6379".parse().unwrap())
-    ).unwrap();
+    ).unwrap());
 
     let f = pubsub::pubsub_connect(&"127.0.0.1:6379".parse().unwrap())
         .and_then(|redis| redis.subscribe("res"))
@@ -95,11 +98,14 @@ fn main() {
                 }
             };
 
-            dbg!(&sid);
-            dbg!(user_id(&sid));
+            let uid = user_id(&sid);
+            let redis_inner = redis.clone();
 
-            let f = upgrade.accept().and_then(|(s, _)| {
+            let f = upgrade.accept().and_then(move |(s, _)| {
                 let (mut sink, stream) = s.split();
+
+                redis_inner.send_and_forget(resp_array!["PUBLISH", "chan", "conn"]);
+
                 sink.start_send(OwnedMessage::Text("foo".to_owned())); // TODO: await
 
                 stream
