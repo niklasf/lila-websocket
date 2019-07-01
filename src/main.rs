@@ -131,6 +131,15 @@ fn publish_connect(con: &mut redis::Connection, uid: String) -> RedisResult<()> 
     }).expect("serialize connect"))
 }
 
+fn publish_disconnect(con: &mut redis::Connection, uid: String) -> RedisResult<()> {
+    con.publish("site-in", serde_json::to_string(&MsgConnect {
+        path: "/disconnect",
+        data: MsgConnectData {
+            user: uid
+        }
+    }).expect("serialize connect"))
+}
+
 struct DefaultHandler;
 impl Handler for DefaultHandler { }
 
@@ -161,6 +170,7 @@ impl Handler for Server {
                 .and_modify(|v| v.push(self.sender.clone()))
                 .or_insert_with(|| {
                     let mut redis = self.app.redis.lock().expect("lock redis");
+                    println!("connected: {}", uid);
                     publish_connect(&mut redis, uid.to_owned()).expect("publish connect");
                     vec![self.sender.clone()]
                 });
@@ -176,6 +186,12 @@ impl Handler for Server {
             let len_before = entry.len();
             entry.retain(|s| s.token() != self.sender.token());
             assert_eq!(entry.len() + 1, len_before);
+            if entry.is_empty() {
+                by_user.remove(&uid);
+                let mut redis = self.app.redis.lock().expect("lock redis");
+                println!("disconnected: {}", uid);
+                publish_disconnect(&mut redis, uid).expect("publish disconnect");
+            }
         }
     }
 
