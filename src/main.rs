@@ -30,6 +30,13 @@ use std::sync::Arc; */
 //   }
 // }
 
+// Global stuff:
+// - Redis connection
+// - By user id:
+//   * number of connections
+// - By token:
+//   * sender
+
 use mio_extras::timer::Timeout;
 
 use ws::{Handshake, Handler, Frame, Sender, Message, CloseCode};
