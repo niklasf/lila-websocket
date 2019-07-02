@@ -233,7 +233,6 @@ impl Handler for Server {
     }
 
     fn on_frame(&mut self, frame: Frame) -> ws::Result<Option<Frame>> {
-        println!("on frame");
         self.sender.timeout(10_000, IDLE_TIMEOUT)?;
         DefaultHandler.on_frame(frame)
     }
