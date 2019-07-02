@@ -21,17 +21,14 @@
 use mongodb::ThreadedClient as _;
 use mongodb::db::ThreadedDatabase as _;
 
+use redis::Commands as _;
+
 use cookie::Cookie;
-
-use mio_extras::timer::Timeout;
-
 use serde::{Serialize, Deserialize};
 
 use ws::{Handshake, Handler, Frame, Sender, Message, CloseCode};
 use ws::util::Token;
-
-use redis::RedisResult;
-use redis::Commands as _;
+use mio_extras::timer::Timeout;
 
 use std::collections::HashMap;
 use std::str;
@@ -133,7 +130,7 @@ struct Server {
 #[serde(tag = "t")]
 enum ClientMessage {
     #[serde(rename = "p")]
-    Ping { l: u32 },
+    Ping { #[allow(unused)] l: u32 },
     #[serde(rename = "notified")]
     Notified,
 }
