@@ -1,6 +1,8 @@
 // -> site-in (to lila)
 // <- site-out (from lila)
 //
+// example redis message (JSON):
+//
 // {
 //   path: /connect
 //   data: {
@@ -77,6 +79,15 @@ impl App {
             redis: Mutex::new(redis),
         }
     }
+
+    fn publish(&self, msg: InternalMessage) {
+        let mut guard = self.redis.lock().expect("redis");
+        let con: &mut redis::Connection = &mut guard;
+        let ret: u32 = con.publish("site-in", serde_json::to_string(&msg).expect("serialize")).expect("publish");
+        if ret == 0 {
+            println!("lila missed a publish");
+        }
+    }
 }
 
 fn main() {
@@ -93,41 +104,14 @@ fn main() {
 }
 
 #[derive(Serialize)]
-struct MsgConnect {
-    path: &'static str,
-    data: MsgConnectData,
-}
-
-#[derive(Serialize)]
-struct MsgConnectData {
-    user: String,
-}
-
-fn publish_connect(con: &mut redis::Connection, uid: String) -> RedisResult<u32> {
-    con.publish("site-in", serde_json::to_string(&MsgConnect {
-        path: "/connect",
-        data: MsgConnectData {
-            user: uid
-        }
-    }).expect("serialize connect"))
-}
-
-fn publish_disconnect(con: &mut redis::Connection, uid: String) -> RedisResult<u32> {
-    con.publish("site-in", serde_json::to_string(&MsgConnect {
-        path: "/disconnect",
-        data: MsgConnectData {
-            user: uid
-        }
-    }).expect("serialize disconnect"))
-}
-
-fn publish_notified(con: &mut redis::Connection, uid: String) -> RedisResult<u32> {
-    con.publish("site-in", serde_json::to_string(&MsgConnect {
-        path: "/notified",
-        data: MsgConnectData {
-            user: uid
-        }
-    }).expect("serialize notified"))
+#[serde(tag = "path")]
+enum InternalMessage<'a> {
+    #[serde(rename = "/connect")]
+    Connect { user: &'a str },
+    #[serde(rename = "/disconnect")]
+    Disconnect { user: &'a str },
+    #[serde(rename = "/notified")]
+    Notified { user: &'a str },
 }
 
 struct DefaultHandler;
@@ -169,9 +153,8 @@ impl Handler for Server {
                 .entry(uid.to_owned())
                 .and_modify(|v| v.push(self.sender.clone()))
                 .or_insert_with(|| {
-                    let mut redis = self.app.redis.lock().expect("lock redis");
-                    let n = publish_connect(&mut redis, uid.to_owned()).expect("publish connect");
-                    println!("connected: {} (ack: {})", uid, n);
+                    println!("connected: {}", uid);
+                    self.app.publish(InternalMessage::Connect { user: uid });
                     vec![self.sender.clone()]
                 });
         }
@@ -188,9 +171,8 @@ impl Handler for Server {
             assert_eq!(entry.len() + 1, len_before);
             if entry.is_empty() {
                 by_user.remove(&uid);
-                let mut redis = self.app.redis.lock().expect("lock redis");
-                let n = publish_disconnect(&mut redis, uid.clone()).expect("publish disconnect");
-                println!("disconnected: {} (ack: {})", uid, n);
+                println!("disconnected: {}", uid);
+                self.app.publish(InternalMessage::Disconnect { user: &uid });
             }
         }
     }
@@ -207,9 +189,8 @@ impl Handler for Server {
             }
             Ok(ClientMessage::Notified) => {
                 if let Some(ref uid) = self.uid {
-                    let mut redis = self.app.redis.lock().expect("lock redis");
-                    let n = publish_notified(&mut redis, uid.clone()).expect("publish notified");
-                    println!("notified: {} (ack: {})", uid, n);
+                    println!("notified: {}", uid);
+                    self.app.publish(InternalMessage::Notified { user: uid });
                 }
                 Ok(())
             }
