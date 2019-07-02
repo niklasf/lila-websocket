@@ -1,23 +1,3 @@
-// -> site-in (to lila)
-// <- site-out (from lila)
-//
-// example redis message (JSON):
-//
-// {
-//   path: /connect
-//   data: {
-//     user: revoof
-//   }
-// }
-
-// Global stuff:
-// - Redis connection
-// - By user id:
-//   * number of connections (implied by list below)
-//   * list of senders
-// - By token:
-//   * sender
-
 use mongodb::ThreadedClient as _;
 use mongodb::db::ThreadedDatabase as _;
 
