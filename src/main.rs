@@ -50,6 +50,7 @@ fn user_id(cookie: &SessionCookie) -> Option<String> {
     let mut query = mongodb::Document::new();
     query.insert("_id", &cookie.session_id);
 
+    // TODO: Currently making a new connection for each query.
     mongodb::Client::connect("127.0.0.1", 27017)
         .expect("mongodb connection")
         .db("lichess")
@@ -60,6 +61,7 @@ fn user_id(cookie: &SessionCookie) -> Option<String> {
 }
 
 struct App {
+    // TODO: Find better datastructures, possibly lock-free.
     by_user: Mutex<HashMap::<String, Vec<Sender>>>,
     by_game: Mutex<HashMap::<String, Vec<Sender>>>,
     redis: Mutex<redis::Connection>,
@@ -101,6 +103,23 @@ fn main() {
             idle_timeout: None
         }
     }).expect("ws listen");
+
+    crossbeam::scope(|s| {
+        s.spawn(|_| {
+            let mut redis = redis::Client::open("redis://127.0.0.1/")
+                .expect("redis open")
+                .get_connection()
+                .expect("redis connection");
+
+            let mut incoming = redis.as_pubsub();
+            incoming.subscribe("lila-out").expect("subscribe lila-out");
+
+            loop {
+                let msg = incoming.get_message().expect("incoming message");
+                let payload: String = msg.get_payload().expect("payload");
+            }
+        });
+    }).expect("scoped recv thread");
 }
 
 #[derive(Serialize)]
