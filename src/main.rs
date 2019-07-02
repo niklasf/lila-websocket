@@ -13,7 +13,7 @@ use mio_extras::timer::Timeout;
 
 use std::collections::{HashMap, HashSet};
 use std::str;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, RwLock};
 
 /// Messages we send to lila.
 #[derive(Serialize)]
@@ -82,8 +82,8 @@ const IDLE_TIMEOUT: Token = Token(1);
 
 struct App {
     // TODO: Find better datastructures, possibly lock-free.
-    by_user: Mutex<HashMap::<String, Vec<Sender>>>,
-    by_game: Mutex<HashMap::<String, Vec<Sender>>>,
+    by_user: RwLock<HashMap::<String, Vec<Sender>>>,
+    by_game: RwLock<HashMap::<String, Vec<Sender>>>,
     redis: Mutex<redis::Connection>,
 }
 
@@ -95,8 +95,8 @@ impl App {
             .expect("redis connection");
 
         App {
-            by_user: Mutex::new(HashMap::new()),
-            by_game: Mutex::new(HashMap::new()),
+            by_user: RwLock::new(HashMap::new()),
+            by_game: RwLock::new(HashMap::new()),
             redis: Mutex::new(redis),
         }
     }
@@ -113,7 +113,7 @@ impl App {
     fn received(&self, msg: LilaOut) {
         match msg {
             LilaOut::Tell { user, payload } => {
-                let by_user = self.by_user.lock().expect("by_user for tell");
+                let by_user = self.by_user.read().expect("by_user for tell");
                 if let Some(entry) = by_user.get(&user) {
                     for sender in entry {
                         let _ = sender.send(Message::text(payload.to_string()));
@@ -121,7 +121,7 @@ impl App {
                 }
             }
             LilaOut::TellMany { users, payload } => {
-                let by_user = self.by_user.lock().expect("by_user for tell many");
+                let by_user = self.by_user.read().expect("by_user for tell many");
                 for user in &users {
                     if let Some(entry) = by_user.get(user) {
                         for sender in entry {
@@ -131,7 +131,7 @@ impl App {
                 }
             }
             LilaOut::Move { ref game_id, ref fen, ref m } => {
-                let by_game = self.by_game.lock().expect("by_game for move");
+                let by_game = self.by_game.read().expect("by_game for move");
                 if let Some(entry) = by_game.get(game_id) {
                     let msg = Message::text(serde_json::to_string(&SocketIn::Fen {
                         id: game_id,
@@ -208,7 +208,7 @@ impl Handler for Socket {
             .and_then(user_id);
 
         if let Some(ref uid) = self.uid {
-            let mut by_user = self.app.by_user.lock().expect("lock by_user for open");
+            let mut by_user = self.app.by_user.write().expect("lock by_user for open");
             by_user
                 .entry(uid.to_owned())
                 .and_modify(|v| v.push(self.sender.clone()))
@@ -225,7 +225,7 @@ impl Handler for Socket {
     fn on_close(&mut self, _: CloseCode, _: &str) {
         if let Some(uid) = self.uid.take() {
             // Update by_user.
-            let mut by_user = self.app.by_user.lock().expect("lock by_user for close");
+            let mut by_user = self.app.by_user.write().expect("lock by_user for close");
             let entry = by_user.get_mut(&uid).expect("uid in map");
             let len_before = entry.len();
             entry.retain(|s| s.token() != self.sender.token());
@@ -233,7 +233,7 @@ impl Handler for Socket {
 
             // Update by_game.
             let our_token = self.sender.token();
-            let mut by_game = self.app.by_game.lock().expect("lock by_game for close");
+            let mut by_game = self.app.by_game.write().expect("lock by_game for close");
             for game in self.watching.drain() {
                 let watchers = by_game.get_mut(&game).expect("game in map");
                 let len_before = watchers.len();
