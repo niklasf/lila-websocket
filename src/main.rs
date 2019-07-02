@@ -25,6 +25,7 @@ use redis::Commands as _;
 
 use cookie::Cookie;
 use serde::{Serialize, Deserialize};
+use serde_json::Value as JsonValue;
 
 use ws::{Handshake, Handler, Frame, Sender, Message, CloseCode};
 use ws::util::Token;
@@ -33,6 +34,50 @@ use mio_extras::timer::Timeout;
 use std::collections::HashMap;
 use std::str;
 use std::sync::{Arc, Mutex};
+
+#[derive(Serialize)]
+#[serde(tag = "path")]
+enum InternalMessage<'a> {
+    #[serde(rename = "/connect")]
+    Connect { user: &'a str },
+    #[serde(rename = "/disconnect")]
+    Disconnect { user: &'a str },
+    #[serde(rename = "/notified")]
+    Notified { user: &'a str },
+}
+
+#[derive(Deserialize)]
+#[serde(tag = "path", content = "data")]
+enum LilaMessage {
+    #[serde(rename = "/move")]
+    Move {
+        #[serde(rename = "gameId")]
+        game_id: String,
+        fen: String,
+        #[serde(rename = "move")]
+        m: String,
+    },
+    #[serde(rename = "/tell/user")]
+    Tell {
+        user: String,
+        payload: JsonValue,
+    },
+    #[serde(rename = "/tell/users")]
+    TellMany {
+        users: Vec<String>,
+        payload: JsonValue,
+    },
+}
+
+/// Messages received from the browser client, JSON encoded, over a Websocket.
+#[derive(Deserialize)]
+#[serde(tag = "t")]
+enum ClientMessage {
+    #[serde(rename = "p")]
+    Ping { #[allow(unused)] l: u32 },
+    #[serde(rename = "notified")]
+    Notified,
+}
 
 const IDLE_TIMEOUT: Token = Token(1);
 
@@ -122,17 +167,6 @@ fn main() {
     }).expect("scoped recv thread");
 }
 
-#[derive(Serialize)]
-#[serde(tag = "path")]
-enum InternalMessage<'a> {
-    #[serde(rename = "/connect")]
-    Connect { user: &'a str },
-    #[serde(rename = "/disconnect")]
-    Disconnect { user: &'a str },
-    #[serde(rename = "/notified")]
-    Notified { user: &'a str },
-}
-
 struct DefaultHandler;
 impl Handler for DefaultHandler { }
 
@@ -142,16 +176,6 @@ struct Server {
     uid: Option<String>,
     watching: Vec<String>,
     idle_timeout: Option<Timeout>,
-}
-
-/// Messages received from the browser client, JSON encoded, over a Websocket.
-#[derive(Deserialize)]
-#[serde(tag = "t")]
-enum ClientMessage {
-    #[serde(rename = "p")]
-    Ping { #[allow(unused)] l: u32 },
-    #[serde(rename = "notified")]
-    Notified,
 }
 
 impl Handler for Server {
