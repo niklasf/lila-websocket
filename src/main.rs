@@ -96,23 +96,16 @@ impl App {
             println!("lila missed a publish");
         }
     }
+
+    fn received(&self, msg: LilaMessage) {
+    }
 }
 
 fn main() {
-    let app = Arc::new(App::new());
-
-    ws::listen("127.0.0.1:9664", move |sender| {
-        Server {
-            app: app.clone(),
-            sender,
-            uid: None,
-            watching: HashSet::new(),
-            idle_timeout: None
-        }
-    }).expect("ws listen");
-
     crossbeam::scope(|s| {
-        s.spawn(|_| {
+        let app = Arc::new(App::new());
+        let app_inner = app.clone();
+        s.spawn(move |_| {
             let mut redis = redis::Client::open("redis://127.0.0.1/")
                 .expect("redis open")
                 .get_connection()
@@ -122,10 +115,24 @@ fn main() {
             incoming.subscribe("lila-out").expect("subscribe lila-out");
 
             loop {
-                let msg = incoming.get_message().expect("incoming message");
-                let payload: String = msg.get_payload().expect("payload");
+                let redis_msg = incoming.get_message().expect("incoming message");
+                let payload: String = redis_msg.get_payload().expect("payload");
+                let msg: LilaMessage = serde_json::from_str(&payload).expect("lila message");
+                app_inner.received(msg);
             }
         });
+        println!("after spawn");
+
+        ws::listen("127.0.0.1:9664", move |sender| {
+            Server {
+                app: app.clone(),
+                sender,
+                uid: None,
+                watching: HashSet::new(),
+                idle_timeout: None
+            }
+        }).expect("ws listen");
+        println!("after listen");
     }).expect("scoped recv thread");
 }
 
