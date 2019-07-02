@@ -239,6 +239,9 @@ impl Handler for Server {
                 let len_before = watchers.len();
                 watchers.retain(|s| s.token() != our_token);
                 assert_eq!(watchers.len() + 1, len_before);
+                if watchers.is_empty() {
+                    by_game.remove(&game);
+                }
             }
 
             // Last remaining connection closed.
