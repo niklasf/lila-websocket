@@ -53,6 +53,18 @@ enum LilaMessage {
     },
 }
 
+/// Messages we send to Websocket clients.
+#[derive(Serialize)]
+#[serde(tag = "t", content = "d")]
+enum ServerMessage<'a> {
+    #[serde(rename = "fen")]
+    Fen {
+        id: &'a str,
+        fen: &'a str,
+        lm: &'a str,
+    }
+}
+
 /// Messages we receive from Websocket clients.
 #[derive(Deserialize)]
 #[serde(tag = "t")]
@@ -64,6 +76,7 @@ enum ClientMessage {
     #[serde(rename = "startWatching")]
     StartWatching { d: String },
 }
+
 
 const IDLE_TIMEOUT: Token = Token(1);
 
@@ -112,8 +125,22 @@ impl App {
                 for user in &users {
                     if let Some(entry) = by_user.get(user) {
                         for sender in entry {
-                            sender.send(Message::text(payload.to_string()));
+                            let _ = sender.send(Message::text(payload.to_string()));
                         }
+                    }
+                }
+            }
+            LilaMessage::Move { ref game_id, ref fen, ref m } => {
+                let by_game = self.by_game.lock().expect("by_game for move");
+                if let Some(entry) = by_game.get(game_id) {
+                    let msg = Message::text(serde_json::to_string(&ServerMessage::Fen {
+                        id: game_id,
+                        fen,
+                        lm: m,
+                    }).expect("serialize fen"));
+
+                    for sender in entry {
+                        let _ = sender.send(msg.clone());
                     }
                 }
             }
