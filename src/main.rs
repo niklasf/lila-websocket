@@ -196,8 +196,10 @@ impl Handler for Server {
     }
 
     fn on_message(&mut self, msg: Message) -> ws::Result<()> {
-        dbg!(msg);
-        self.sender.send(Message::text("0"))
+        if msg.as_text()? == "null" { // ping
+            self.sender.send(Message::text("0"))?;
+        }
+        Ok(())
     }
 
     fn on_new_timeout(&mut self, event: Token, timeout: Timeout) -> ws::Result<()> {
