@@ -99,20 +99,20 @@ impl App {
 
     fn received(&self, msg: LilaMessage) {
         match msg {
-            LilaMessage::Tell { ref user, payload } => {
+            LilaMessage::Tell { user, payload } => {
                 let by_user = self.by_user.lock().expect("by_user for tell");
-                if let Some(entry) = by_user.get(user) {
+                if let Some(entry) = by_user.get(&user) {
                     for sender in entry {
-                        // do send
+                        let _ = sender.send(Message::text(payload.to_string()));
                     }
                 }
             }
-            LilaMessage::TellMany { ref users, payload } => {
+            LilaMessage::TellMany { users, payload } => {
                 let by_user = self.by_user.lock().expect("by_user for tell many");
-                for user in users {
+                for user in &users {
                     if let Some(entry) = by_user.get(user) {
                         for sender in entry {
-                            // do send
+                            sender.send(Message::text(payload.to_string()));
                         }
                     }
                 }
