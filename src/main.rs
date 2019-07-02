@@ -64,6 +64,7 @@ fn user_id(cookie: &SessionCookie) -> Option<String> {
 
 struct App {
     by_user: Mutex<HashMap::<String, Vec<Sender>>>,
+    by_game: Mutex<HashMap::<String, Vec<Sender>>>,
     redis: Mutex<redis::Connection>,
 }
 
@@ -76,6 +77,7 @@ impl App {
 
         App {
             by_user: Mutex::new(HashMap::new()),
+            by_game: Mutex::new(HashMap::new()),
             redis: Mutex::new(redis),
         }
     }
@@ -98,6 +100,7 @@ fn main() {
             app: app.clone(),
             sender,
             uid: None,
+            watching: Vec::new(),
             idle_timeout: None
         }
     }).expect("ws listen");
@@ -121,6 +124,7 @@ struct Server {
     app: Arc<App>,
     sender: Sender,
     uid: Option<String>,
+    watching: Vec<String>,
     idle_timeout: Option<Timeout>,
 }
 
@@ -164,11 +168,24 @@ impl Handler for Server {
 
     fn on_close(&mut self, _: CloseCode, _: &str) {
         if let Some(uid) = self.uid.take() {
+            // Update by_user.
             let mut by_user = self.app.by_user.lock().expect("lock by_user for close");
             let entry = by_user.get_mut(&uid).expect("uid in map");
             let len_before = entry.len();
             entry.retain(|s| s.token() != self.sender.token());
             assert_eq!(entry.len() + 1, len_before);
+
+            // Update by_game.
+            let our_token = self.sender.token();
+            let mut by_game = self.app.by_game.lock().expect("lock by_game for close");
+            for game in self.watching.drain(..) {
+                let watchers = by_game.get_mut(&game).expect("game in map");
+                let len_before = watchers.len();
+                watchers.retain(|s| s.token() != our_token);
+                assert_eq!(watchers.len() + 1, len_before);
+            }
+
+            // Last remaining connection closed.
             if entry.is_empty() {
                 by_user.remove(&uid);
                 println!("disconnected: {}", uid);
