@@ -122,7 +122,7 @@ struct MsgConnectData {
     user: String,
 }
 
-fn publish_connect(con: &mut redis::Connection, uid: String) -> RedisResult<()> {
+fn publish_connect(con: &mut redis::Connection, uid: String) -> RedisResult<u32> {
     con.publish("site-in", serde_json::to_string(&MsgConnect {
         path: "/connect",
         data: MsgConnectData {
@@ -131,7 +131,7 @@ fn publish_connect(con: &mut redis::Connection, uid: String) -> RedisResult<()> 
     }).expect("serialize connect"))
 }
 
-fn publish_disconnect(con: &mut redis::Connection, uid: String) -> RedisResult<()> {
+fn publish_disconnect(con: &mut redis::Connection, uid: String) -> RedisResult<u32> {
     con.publish("site-in", serde_json::to_string(&MsgConnect {
         path: "/disconnect",
         data: MsgConnectData {
@@ -149,6 +149,11 @@ struct Server {
     uid: Option<String>,
     idle_timeout: Option<Timeout>,
 }
+
+/* #[derive(Deserialize)]
+enum IncomingWebsocketMessage {
+    Ping { t: 
+}  */
 
 impl Handler for Server {
     fn on_open(&mut self, handshake: Handshake) -> ws::Result<()> {
@@ -170,8 +175,8 @@ impl Handler for Server {
                 .and_modify(|v| v.push(self.sender.clone()))
                 .or_insert_with(|| {
                     let mut redis = self.app.redis.lock().expect("lock redis");
-                    println!("connected: {}", uid);
-                    publish_connect(&mut redis, uid.to_owned()).expect("publish connect");
+                    let n = publish_connect(&mut redis, uid.to_owned()).expect("publish connect");
+                    println!("connected: {} (ack: {})", uid, n);
                     vec![self.sender.clone()]
                 });
         }
@@ -189,8 +194,8 @@ impl Handler for Server {
             if entry.is_empty() {
                 by_user.remove(&uid);
                 let mut redis = self.app.redis.lock().expect("lock redis");
-                println!("disconnected: {}", uid);
-                publish_disconnect(&mut redis, uid).expect("publish disconnect");
+                let n = publish_disconnect(&mut redis, uid.clone()).expect("publish disconnect");
+                println!("disconnected: {} (ack: {})", uid, n);
             }
         }
     }
