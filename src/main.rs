@@ -11,7 +11,7 @@ use ws::{Handshake, Handler, Frame, Sender, Message, CloseCode};
 use ws::util::Token;
 use mio_extras::timer::Timeout;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::str;
 use std::sync::{Arc, Mutex};
 
@@ -25,6 +25,8 @@ enum InternalMessage<'a> {
     Disconnect { user: &'a str },
     #[serde(rename = "/notified")]
     Notified { user: &'a str },
+    #[serde(rename = "/watch")]
+    Watch { game: &'a str },
 }
 
 /// Messages we receive from lila.
@@ -59,6 +61,8 @@ enum ClientMessage {
     Ping { #[allow(unused)] l: u32 },
     #[serde(rename = "notified")]
     Notified,
+    #[serde(rename = "startWatching")]
+    StartWatching { d: String },
 }
 
 const IDLE_TIMEOUT: Token = Token(1);
@@ -102,7 +106,7 @@ fn main() {
             app: app.clone(),
             sender,
             uid: None,
-            watching: Vec::new(),
+            watching: HashSet::new(),
             idle_timeout: None
         }
     }).expect("ws listen");
@@ -132,7 +136,7 @@ struct Server {
     app: Arc<App>,
     sender: Sender,
     uid: Option<String>,
-    watching: Vec<String>,
+    watching: HashSet<String>,
     idle_timeout: Option<Timeout>,
 }
 
@@ -176,7 +180,7 @@ impl Handler for Server {
             // Update by_game.
             let our_token = self.sender.token();
             let mut by_game = self.app.by_game.lock().expect("lock by_game for close");
-            for game in self.watching.drain(..) {
+            for game in self.watching.drain() {
                 let watchers = by_game.get_mut(&game).expect("game in map");
                 let len_before = watchers.len();
                 watchers.retain(|s| s.token() != our_token);
@@ -209,6 +213,10 @@ impl Handler for Server {
                 }
                 Ok(())
             }
+            Ok(ClientMessage::StartWatching { d }) => {
+                self.app.publish(InternalMessage::Watch { game: &d });
+                Ok(())
+            },
             Err(err) => {
                 println!("protocol violation: {:?}", err);
                 self.sender.close(CloseCode::Protocol)
