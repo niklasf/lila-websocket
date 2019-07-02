@@ -1,22 +1,3 @@
-/* use cookie::Cookie;
-use websocket::r#async::Server;
-
-use websocket::server::InvalidConnection;
-use websocket::header;
-use websocket::header::{Headers};
-use websocket::message::OwnedMessage;
-
-use redis_async::resp_array;
-use redis_async::client::pubsub;
-
-use futures::{Future, Sink, Stream, future, stream};
-
-use serde::{Serialize, Deserialize};
-use serde_json::Value as JsonValue;
-
-use std::str;
-use std::sync::Arc; */
-
 // -> site-in (to lila)
 // <- site-out (from lila)
 //
@@ -150,10 +131,12 @@ struct Server {
     idle_timeout: Option<Timeout>,
 }
 
-/* #[derive(Deserialize)]
-enum IncomingWebsocketMessage {
-    Ping { t: 
-}  */
+#[derive(Deserialize)]
+#[serde(tag = "t")]
+enum ClientMessage {
+    #[serde(rename = "p")]
+    Ping { l: u32 }
+}
 
 impl Handler for Server {
     fn on_open(&mut self, handshake: Handshake) -> ws::Result<()> {
@@ -202,9 +185,18 @@ impl Handler for Server {
 
     fn on_message(&mut self, msg: Message) -> ws::Result<()> {
         if msg.as_text()? == "null" { // ping
-            self.sender.send(Message::text("0"))?;
+            self.sender.send(Message::text("0"))
+        } else {
+            match serde_json::from_str(msg.as_text()?) {
+                Ok(ClientMessage::Ping { .. }) => {
+                    self.sender.send(Message::text("0"))
+                }
+                Err(err) => {
+                    println!("protocol violation: {:?}", err);
+                    self.sender.close(CloseCode::Protocol)
+                }
+            }
         }
-        Ok(())
     }
 
     fn on_new_timeout(&mut self, event: Token, timeout: Timeout) -> ws::Result<()> {
