@@ -18,7 +18,7 @@ use std::sync::{Arc, Mutex};
 /// Messages we send to lila.
 #[derive(Serialize)]
 #[serde(tag = "path")]
-enum InternalMessage<'a> {
+enum LilaIn<'a> {
     #[serde(rename = "/connect")]
     Connect { user: &'a str },
     #[serde(rename = "/disconnect")]
@@ -32,7 +32,7 @@ enum InternalMessage<'a> {
 /// Messages we receive from lila.
 #[derive(Deserialize)]
 #[serde(tag = "path", content = "data")]
-enum LilaMessage {
+enum LilaOut {
     #[serde(rename = "/move")]
     Move {
         #[serde(rename = "gameId")]
@@ -56,7 +56,7 @@ enum LilaMessage {
 /// Messages we send to Websocket clients.
 #[derive(Serialize)]
 #[serde(tag = "t", content = "d")]
-enum ServerMessage<'a> {
+enum SocketIn<'a> {
     #[serde(rename = "fen")]
     Fen {
         id: &'a str,
@@ -68,7 +68,7 @@ enum ServerMessage<'a> {
 /// Messages we receive from Websocket clients.
 #[derive(Deserialize)]
 #[serde(tag = "t")]
-enum ClientMessage {
+enum SocketOut {
     #[serde(rename = "p")]
     Ping { #[allow(unused)] l: u32 },
     #[serde(rename = "notified")]
@@ -101,7 +101,7 @@ impl App {
         }
     }
 
-    fn publish(&self, msg: InternalMessage) {
+    fn publish(&self, msg: LilaIn) {
         let mut guard = self.redis.lock().expect("redis");
         let con: &mut redis::Connection = &mut guard;
         let ret: u32 = con.publish("site-in", serde_json::to_string(&msg).expect("serialize")).expect("publish");
@@ -110,9 +110,9 @@ impl App {
         }
     }
 
-    fn received(&self, msg: LilaMessage) {
+    fn received(&self, msg: LilaOut) {
         match msg {
-            LilaMessage::Tell { user, payload } => {
+            LilaOut::Tell { user, payload } => {
                 let by_user = self.by_user.lock().expect("by_user for tell");
                 if let Some(entry) = by_user.get(&user) {
                     for sender in entry {
@@ -120,7 +120,7 @@ impl App {
                     }
                 }
             }
-            LilaMessage::TellMany { users, payload } => {
+            LilaOut::TellMany { users, payload } => {
                 let by_user = self.by_user.lock().expect("by_user for tell many");
                 for user in &users {
                     if let Some(entry) = by_user.get(user) {
@@ -130,10 +130,10 @@ impl App {
                     }
                 }
             }
-            LilaMessage::Move { ref game_id, ref fen, ref m } => {
+            LilaOut::Move { ref game_id, ref fen, ref m } => {
                 let by_game = self.by_game.lock().expect("by_game for move");
                 if let Some(entry) = by_game.get(game_id) {
-                    let msg = Message::text(serde_json::to_string(&ServerMessage::Fen {
+                    let msg = Message::text(serde_json::to_string(&SocketIn::Fen {
                         id: game_id,
                         fen,
                         lm: m,
@@ -164,14 +164,14 @@ fn main() {
             loop {
                 let redis_msg = incoming.get_message().expect("incoming message");
                 let payload: String = redis_msg.get_payload().expect("payload");
-                let msg: LilaMessage = serde_json::from_str(&payload).expect("lila message");
+                let msg: LilaOut = serde_json::from_str(&payload).expect("lila message");
                 app_inner.received(msg);
             }
         });
         println!("after spawn");
 
         ws::listen("127.0.0.1:9664", move |sender| {
-            Server {
+            Socket {
                 app: app.clone(),
                 sender,
                 uid: None,
@@ -186,7 +186,7 @@ fn main() {
 struct DefaultHandler;
 impl Handler for DefaultHandler { }
 
-struct Server {
+struct Socket {
     app: Arc<App>,
     sender: Sender,
     uid: Option<String>,
@@ -194,7 +194,7 @@ struct Server {
     idle_timeout: Option<Timeout>,
 }
 
-impl Handler for Server {
+impl Handler for Socket {
     fn on_open(&mut self, handshake: Handshake) -> ws::Result<()> {
         self.uid = handshake.request.header("cookie")
             .and_then(|h| str::from_utf8(h).ok())
@@ -214,7 +214,7 @@ impl Handler for Server {
                 .and_modify(|v| v.push(self.sender.clone()))
                 .or_insert_with(|| {
                     println!("connected: {}", uid);
-                    self.app.publish(InternalMessage::Connect { user: uid });
+                    self.app.publish(LilaIn::Connect { user: uid });
                     vec![self.sender.clone()]
                 });
         }
@@ -248,7 +248,7 @@ impl Handler for Server {
             if entry.is_empty() {
                 by_user.remove(&uid);
                 println!("disconnected: {}", uid);
-                self.app.publish(InternalMessage::Disconnect { user: &uid });
+                self.app.publish(LilaIn::Disconnect { user: &uid });
             }
         }
     }
@@ -260,18 +260,18 @@ impl Handler for Server {
         }
 
         match serde_json::from_str(msg.as_text()?) {
-            Ok(ClientMessage::Ping { .. }) => {
+            Ok(SocketOut::Ping { .. }) => {
                 self.sender.send(Message::text("0"))
             }
-            Ok(ClientMessage::Notified) => {
+            Ok(SocketOut::Notified) => {
                 if let Some(ref uid) = self.uid {
                     println!("notified: {}", uid);
-                    self.app.publish(InternalMessage::Notified { user: uid });
+                    self.app.publish(LilaIn::Notified { user: uid });
                 }
                 Ok(())
             }
-            Ok(ClientMessage::StartWatching { d }) => {
-                self.app.publish(InternalMessage::Watch { game: &d });
+            Ok(SocketOut::StartWatching { d }) => {
+                self.app.publish(LilaIn::Watch { game: &d });
                 Ok(())
             },
             Err(err) => {
