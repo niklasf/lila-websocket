@@ -15,6 +15,7 @@ use std::collections::HashMap;
 use std::str;
 use std::sync::{Arc, Mutex};
 
+/// Messages we send to lila.
 #[derive(Serialize)]
 #[serde(tag = "path")]
 enum InternalMessage<'a> {
@@ -26,6 +27,7 @@ enum InternalMessage<'a> {
     Notified { user: &'a str },
 }
 
+/// Messages we receive from lila.
 #[derive(Deserialize)]
 #[serde(tag = "path", content = "data")]
 enum LilaMessage {
@@ -49,7 +51,7 @@ enum LilaMessage {
     },
 }
 
-/// Messages received from the browser client, JSON encoded, over a Websocket.
+/// Messages we receive from Websocket clients.
 #[derive(Deserialize)]
 #[serde(tag = "t")]
 enum ClientMessage {
@@ -60,30 +62,6 @@ enum ClientMessage {
 }
 
 const IDLE_TIMEOUT: Token = Token(1);
-
-#[derive(Debug, Deserialize)]
-struct SessionCookie {
-    #[serde(rename = "sessionId")]
-    session_id: String,
-}
-
-fn session_id(lila2: &str) -> Option<SessionCookie> {
-    serde_urlencoded::from_str(lila2).ok()
-}
-
-fn user_id(cookie: &SessionCookie) -> Option<String> {
-    let mut query = mongodb::Document::new();
-    query.insert("_id", &cookie.session_id);
-
-    // TODO: Currently making a new connection for each query.
-    mongodb::Client::connect("127.0.0.1", 27017)
-        .expect("mongodb connection")
-        .db("lichess")
-        .collection("security")
-        .find_one(Some(query), None)
-        .expect("query by sid")
-        .and_then(|doc| doc.get_str("user").map(|s| s.to_owned()).ok())
-}
 
 struct App {
     // TODO: Find better datastructures, possibly lock-free.
@@ -256,4 +234,28 @@ impl Handler for Server {
         self.sender.timeout(10_000, IDLE_TIMEOUT)?;
         DefaultHandler.on_frame(frame)
     }
+}
+
+#[derive(Debug, Deserialize)]
+struct SessionCookie {
+    #[serde(rename = "sessionId")]
+    session_id: String,
+}
+
+fn session_id(lila2: &str) -> Option<SessionCookie> {
+    serde_urlencoded::from_str(lila2).ok()
+}
+
+fn user_id(cookie: &SessionCookie) -> Option<String> {
+    let mut query = mongodb::Document::new();
+    query.insert("_id", &cookie.session_id);
+
+    // TODO: Currently making a new connection for each query.
+    mongodb::Client::connect("127.0.0.1", 27017)
+        .expect("mongodb connection")
+        .db("lichess")
+        .collection("security")
+        .find_one(Some(query), None)
+        .expect("query by sid")
+        .and_then(|doc| doc.get_str("user").map(|s| s.to_owned()).ok())
 }
