@@ -118,7 +118,16 @@ fn publish_disconnect(con: &mut redis::Connection, uid: String) -> RedisResult<u
         data: MsgConnectData {
             user: uid
         }
-    }).expect("serialize connect"))
+    }).expect("serialize disconnect"))
+}
+
+fn publish_notified(con: &mut redis::Connection, uid: String) -> RedisResult<u32> {
+    con.publish("site-in", serde_json::to_string(&MsgConnect {
+        path: "/notified",
+        data: MsgConnectData {
+            user: uid
+        }
+    }).expect("serialize notified"))
 }
 
 struct DefaultHandler;
@@ -131,11 +140,14 @@ struct Server {
     idle_timeout: Option<Timeout>,
 }
 
+/// Messages received from the browser client, JSON encoded, over a Websocket.
 #[derive(Deserialize)]
 #[serde(tag = "t")]
 enum ClientMessage {
     #[serde(rename = "p")]
-    Ping { l: u32 }
+    Ping { l: u32 },
+    #[serde(rename = "notified")]
+    Notified,
 }
 
 impl Handler for Server {
@@ -184,17 +196,26 @@ impl Handler for Server {
     }
 
     fn on_message(&mut self, msg: Message) -> ws::Result<()> {
-        if msg.as_text()? == "null" { // ping
-            self.sender.send(Message::text("0"))
-        } else {
-            match serde_json::from_str(msg.as_text()?) {
-                Ok(ClientMessage::Ping { .. }) => {
-                    self.sender.send(Message::text("0"))
+        if msg.as_text()? == "null" {
+            // Fast path for ping.
+            return self.sender.send(Message::text("0"));
+        }
+
+        match serde_json::from_str(msg.as_text()?) {
+            Ok(ClientMessage::Ping { .. }) => {
+                self.sender.send(Message::text("0"))
+            }
+            Ok(ClientMessage::Notified) => {
+                if let Some(ref uid) = self.uid {
+                    let mut redis = self.app.redis.lock().expect("lock redis");
+                    let n = publish_notified(&mut redis, uid.clone()).expect("publish notified");
+                    println!("notified: {} (ack: {})", uid, n);
                 }
-                Err(err) => {
-                    println!("protocol violation: {:?}", err);
-                    self.sender.close(CloseCode::Protocol)
-                }
+                Ok(())
+            }
+            Err(err) => {
+                println!("protocol violation: {:?}", err);
+                self.sender.close(CloseCode::Protocol)
             }
         }
     }
