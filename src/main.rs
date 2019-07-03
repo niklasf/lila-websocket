@@ -77,6 +77,13 @@ enum SocketOut {
     StartWatching { d: String },
 }
 
+/// Session cookie from Play framework.
+#[derive(Debug, Deserialize)]
+struct SessionCookie {
+    #[serde(rename = "sessionId")]
+    session_id: String,
+}
+
 /// Token for the timeout that's used to closed Websockets after some time
 /// of inactivity.
 const IDLE_TIMEOUT: Token = Token(1);
@@ -157,7 +164,7 @@ impl Handler for Socket {
                 let (name, value) = c.name_value();
                 Some(value.to_owned()).filter(|_| name == "lila2")
             })
-            .and_then(|s| session_id(&s))
+            .and_then(|s| serde_urlencoded::from_str::<SessionCookie>(&s).ok())
             .as_ref()
             .and_then(user_id);
 
@@ -259,16 +266,6 @@ impl Handler for Socket {
 struct DefaultHandler;
 
 impl Handler for DefaultHandler { }
-
-#[derive(Debug, Deserialize)]
-struct SessionCookie {
-    #[serde(rename = "sessionId")]
-    session_id: String,
-}
-
-fn session_id(lila2: &str) -> Option<SessionCookie> {
-    serde_urlencoded::from_str(lila2).ok()
-}
 
 fn user_id(cookie: &SessionCookie) -> Option<String> {
     let mut query = mongodb::Document::new();
