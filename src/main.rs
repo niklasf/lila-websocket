@@ -13,7 +13,7 @@ use mio_extras::timer::Timeout;
 
 use std::collections::{HashMap, HashSet};
 use std::str;
-use std::sync::{Arc, Mutex, RwLock};
+use std::sync::{Arc, RwLock};
 
 /// Messages we send to lila.
 #[derive(Serialize)]
@@ -77,37 +77,28 @@ enum SocketOut {
     StartWatching { d: String },
 }
 
-
+/// Token for the timeout that's used to closed Websockets after some time
+/// of inactivity.
 const IDLE_TIMEOUT: Token = Token(1);
 
 struct App {
     // TODO: Find better datastructures, possibly lock-free.
     by_user: RwLock<HashMap::<String, Vec<Sender>>>,
     by_game: RwLock<HashMap::<String, Vec<Sender>>>,
-    redis: Mutex<redis::Connection>,
+    redis_sink: crossbeam::channel::Sender<String>,
 }
 
 impl App {
-    fn new() -> App {
-        let redis = redis::Client::open("redis://127.0.0.1/")
-            .expect("redis open")
-            .get_connection()
-            .expect("redis connection");
-
+    fn new(redis_sink: crossbeam::channel::Sender<String>) -> App {
         App {
             by_user: RwLock::new(HashMap::new()),
             by_game: RwLock::new(HashMap::new()),
-            redis: Mutex::new(redis),
+            redis_sink
         }
     }
 
     fn publish(&self, msg: LilaIn) {
-        let mut guard = self.redis.lock().expect("redis");
-        let con: &mut redis::Connection = &mut guard;
-        let ret: u32 = con.publish("site-in", serde_json::to_string(&msg).expect("serialize")).expect("publish");
-        if ret == 0 {
-            println!("lila missed a publish");
-        }
+        self.redis_sink.send(serde_json::to_string(&msg).expect("serialize")).expect("redis sink");
     }
 
     fn received(&self, msg: LilaOut) {
@@ -150,8 +141,27 @@ impl App {
 
 fn main() {
     crossbeam::scope(|s| {
-        let app = Arc::new(App::new());
+        let (redis_sink, redis_recv) = crossbeam::channel::unbounded();
+        let app = Arc::new(App::new(redis_sink));
         let app_inner = app.clone();
+
+        // Thread for outgoing messages to lila.
+        s.spawn(move |_| {
+            let redis = redis::Client::open("redis://127.0.0.1/")
+                .expect("redis open for publish")
+                .get_connection()
+                .expect("redis connection for publish");
+
+            loop {
+                let msg = redis_recv.recv().expect("redis recv");
+                let ret: u32 = redis.publish("site-in", msg).expect("publish");
+                if ret == 0 {
+                    println!("lila missed a message");
+                }
+            }
+        });
+
+        // Thread for incoming messages from lila.
         s.spawn(move |_| {
             let mut redis = redis::Client::open("redis://127.0.0.1/")
                 .expect("redis open")
