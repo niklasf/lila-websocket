@@ -381,8 +381,6 @@ fn main() {
                 .get_connection()
                 .expect("redis connection for publish");
 
-            let _: () = redis.set("connections", 0).expect("reset connections");
-
             loop {
                 let msg = redis_recv.recv().expect("redis recv");
                 let msg = serde_json::to_string(&msg).expect("serialize");
