@@ -232,10 +232,16 @@ impl Handler for Socket {
             let idx = entry.iter().position(|s| s.token() == self.sender.token()).expect("uid in by_user");
             entry.swap_remove(idx);
 
+            // Last remaining connection closed.
+            if entry.is_empty() {
+                by_user.remove(&uid);
+                log::debug!("last close: {}", uid);
+                self.app.publish(LilaIn::Disconnect { user: &uid });
+            }
 
             // Update by_game.
-            let our_token = self.sender.token();
             let mut by_game = self.app.by_game.write().expect("lock by_game for close");
+            let our_token = self.sender.token();
             for game in self.watching.drain() {
                 let watchers = by_game.get_mut(&game).expect("game in map");
                 let idx = watchers.iter().position(|s| s.token() == our_token).expect("sender in watchers");
@@ -243,14 +249,6 @@ impl Handler for Socket {
                 if watchers.is_empty() {
                     by_game.remove(&game);
                 }
-            }
-
-            // Last remaining connection closed.
-            // TODO: Can we use entry API here?
-            if entry.is_empty() {
-                by_user.remove(&uid);
-                log::debug!("last close: {}", uid);
-                self.app.publish(LilaIn::Disconnect { user: &uid });
             }
         }
     }
