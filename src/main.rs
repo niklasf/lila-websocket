@@ -361,14 +361,23 @@ fn main() {
             }
         });
 
-        ws::listen("127.0.0.1:9664", move |sender| {
-            Socket {
-                app,
-                sender,
-                uid: None,
-                watching: HashSet::new(),
-                idle_timeout: None
-            }
-        }).expect("ws listen");
+        let mut settings = ws::Settings::default();
+        settings.max_connections = 40_000;
+        settings.tcp_nodelay = true;
+
+        ws::Builder::new()
+            .with_settings(settings)
+            .build(move |sender| {
+                Socket {
+                    app,
+                    sender,
+                    uid: None,
+                    watching: HashSet::new(),
+                    idle_timeout: None
+                }
+            })
+            .expect("valid settings")
+            .listen("127.0.0.1:9664")
+            .expect("ws listen");
     }).expect("scope");
 }
