@@ -175,13 +175,16 @@ impl Handler for Socket {
         // Ask mongodb for user id based on session cookie.
         self.uid = handshake.request.header("cookie")
             .and_then(|h| str::from_utf8(h).ok())
-            .and_then(|h| Cookie::parse(h).ok())
-            .and_then(|c| {
-                let (name, value) = c.name_value();
-                Some(value.to_owned()).filter(|_| name == "lila2")
+            .and_then(|h| {
+                h.split(';')
+                    .map(|p| p.trim())
+                    .filter(|p| p.starts_with("lila2="))
+                    .next()
             })
-            .map(|d| dbg!(d))
-            .and_then(|s| {
+            .and_then(|h| Cookie::parse(h).ok())
+            .map(|c| dbg!(c))
+            .and_then(|c| {
+                let s = c.value();
                 let idx = s.find('-').map(|n| n + 1).unwrap_or(0);
                 serde_urlencoded::from_str::<SessionCookie>(&s[idx..]).ok()
             })
