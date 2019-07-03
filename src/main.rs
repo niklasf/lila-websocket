@@ -21,20 +21,21 @@ use mio_extras::timer::Timeout;
 use std::collections::{HashMap, HashSet};
 use std::str;
 use std::sync::RwLock;
-use std::sync::atomic::{AtomicU32, Ordering};
 
 /// Messages we send to lila.
 #[derive(Serialize)]
 #[serde(tag = "path")]
-enum LilaIn<'a> {
+enum LilaIn {
     #[serde(rename = "/connect")]
-    Connect { user: &'a str },
+    Connect { user: String },
     #[serde(rename = "/disconnect")]
-    Disconnect { user: &'a str },
+    Disconnect { user: String },
     #[serde(rename = "/notified")]
-    Notified { user: &'a str },
+    Notified { user: String },
     #[serde(rename = "/watch")]
-    Watch { game: &'a str },
+    Watch { game: String },
+    Inc, // updates counter
+    Dec, // updates counter
 }
 
 /// Messages we receive from lila.
@@ -100,24 +101,22 @@ const IDLE_TIMEOUT: Token = Token(1);
 struct App {
     by_user: RwLock<HashMap::<String, Vec<Sender>>>,
     by_game: RwLock<HashMap::<String, Vec<Sender>>>,
-    redis_sink: crossbeam::channel::Sender<String>,
+    redis_sink: crossbeam::channel::Sender<LilaIn>,
     session_store: mongodb::coll::Collection,
-    connection_count: AtomicU32,
 }
 
 impl App {
-    fn new(redis_sink: crossbeam::channel::Sender<String>, session_store: mongodb::coll::Collection) -> App {
+    fn new(redis_sink: crossbeam::channel::Sender<LilaIn>, session_store: mongodb::coll::Collection) -> App {
         App {
             by_user: RwLock::new(HashMap::new()),
             by_game: RwLock::new(HashMap::new()),
             redis_sink,
             session_store,
-            connection_count: AtomicU32::new(0),
         }
     }
 
     fn publish(&self, msg: LilaIn) {
-        self.redis_sink.send(serde_json::to_string(&msg).expect("serialize")).expect("redis sink");
+        self.redis_sink.send(msg).expect("redis sink");
     }
 
     fn received(&self, msg: LilaOut) {
@@ -175,9 +174,8 @@ struct Socket {
 
 impl Handler for Socket {
     fn on_open(&mut self, handshake: Handshake) -> ws::Result<()> {
-        // Inc connection count. (To avoid overflow, the corresponding
-        // decrement needs to be ordered after this.)
-        self.app.connection_count.fetch_add(1, Ordering::SeqCst);
+        // Update connection count.
+        self.app.publish(LilaIn::Inc);
 
         // Ask mongodb for user id based on session cookie.
         self.uid = handshake.request.header("cookie")
@@ -213,7 +211,7 @@ impl Handler for Socket {
                 .and_modify(|v| v.push(self.sender.clone()))
                 .or_insert_with(|| {
                     log::debug!("first open: {}", uid);
-                    self.app.publish(LilaIn::Connect { user: uid });
+                    self.app.publish(LilaIn::Connect { user: uid.to_owned() });
                     vec![self.sender.clone()]
                 });
         }
@@ -223,10 +221,11 @@ impl Handler for Socket {
     }
 
     fn on_close(&mut self, _: CloseCode, _: &str) {
-        self.app.connection_count.fetch_sub(1, Ordering::SeqCst);
+        // Update connection count.
+        self.app.publish(LilaIn::Dec);
 
+        // Update by_user.
         if let Some(uid) = self.uid.take() {
-            // Update by_user.
             let mut by_user = self.app.by_user.write().expect("lock by_user for close");
             let entry = by_user.get_mut(&uid).expect("uid in map");
             let idx = entry.iter().position(|s| s.token() == self.sender.token()).expect("uid in by_user");
@@ -236,19 +235,19 @@ impl Handler for Socket {
             if entry.is_empty() {
                 by_user.remove(&uid);
                 log::debug!("last close: {}", uid);
-                self.app.publish(LilaIn::Disconnect { user: &uid });
+                self.app.publish(LilaIn::Disconnect { user: uid });
             }
+        }
 
-            // Update by_game.
-            let mut by_game = self.app.by_game.write().expect("lock by_game for close");
-            let our_token = self.sender.token();
-            for game in self.watching.drain() {
-                let watchers = by_game.get_mut(&game).expect("game in map");
-                let idx = watchers.iter().position(|s| s.token() == our_token).expect("sender in watchers");
-                watchers.swap_remove(idx);
-                if watchers.is_empty() {
-                    by_game.remove(&game);
-                }
+        // Update by_game.
+        let mut by_game = self.app.by_game.write().expect("lock by_game for close");
+        let our_token = self.sender.token();
+        for game in self.watching.drain() {
+            let watchers = by_game.get_mut(&game).expect("game in map");
+            let idx = watchers.iter().position(|s| s.token() == our_token).expect("sender in watchers");
+            watchers.swap_remove(idx);
+            if watchers.is_empty() {
+                by_game.remove(&game);
             }
         }
     }
@@ -267,13 +266,13 @@ impl Handler for Socket {
             Ok(SocketOut::Notified) => {
                 if let Some(ref uid) = self.uid {
                     log::debug!("notified: {}", uid);
-                    self.app.publish(LilaIn::Notified { user: uid });
+                    self.app.publish(LilaIn::Notified { user: uid.to_owned() });
                 }
                 Ok(())
             }
             Ok(SocketOut::StartWatching { d }) => {
                 log::debug!("start watching: {}", d);
-                self.app.publish(LilaIn::Watch { game: &d });
+                self.app.publish(LilaIn::Watch { game: d });
                 Ok(())
             },
             Err(err) => {
@@ -328,10 +327,16 @@ fn main() {
                 .expect("redis connection for publish");
 
             loop {
-                let msg = redis_recv.recv().expect("redis recv");
-                let ret: u32 = redis.publish("site-in", msg).expect("publish site-in");
-                if ret == 0 {
-                    log::error!("lila missed as message");
+                match redis_recv.recv().expect("redis recv") {
+                    LilaIn::Inc => (),
+                    LilaIn::Dec => (),
+                    msg => {
+                        let msg = serde_json::to_string(&msg).expect("serialize");
+                        let ret: u32 = redis.publish("site-in", msg).expect("publish site-in");
+                        if ret == 0 {
+                            log::error!("lila missed as message");
+                        }
+                    }
                 }
             }
         });
