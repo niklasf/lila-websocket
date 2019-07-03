@@ -139,11 +139,6 @@ impl App {
     }
 }
 
-/// Used to get the normal `on_frame` behavior.
-struct DefaultHandler;
-
-impl Handler for DefaultHandler { }
-
 /// A Websocket client connection.
 struct Socket {
     app: &'static App,
@@ -260,6 +255,11 @@ impl Handler for Socket {
     }
 }
 
+/// Used to get the normal `on_frame` behavior.
+struct DefaultHandler;
+
+impl Handler for DefaultHandler { }
+
 #[derive(Debug, Deserialize)]
 struct SessionCookie {
     #[serde(rename = "sessionId")]
@@ -298,7 +298,7 @@ fn main() {
 
             loop {
                 let msg = redis_recv.recv().expect("redis recv");
-                let ret: u32 = redis.publish("site-in", msg).expect("publish");
+                let ret: u32 = redis.publish("site-in", msg).expect("publish site-in");
                 if ret == 0 {
                     println!("lila missed a message");
                 }
@@ -308,21 +308,20 @@ fn main() {
         // Thread for incoming messages from lila.
         s.spawn(move |_| {
             let mut redis = redis::Client::open("redis://127.0.0.1/")
-                .expect("redis open")
+                .expect("redis open for subscribe")
                 .get_connection()
-                .expect("redis connection");
+                .expect("redis connection for subscribe");
 
             let mut incoming = redis.as_pubsub();
             incoming.subscribe("lila-out").expect("subscribe lila-out");
 
             loop {
-                let redis_msg = incoming.get_message().expect("incoming message");
-                let payload: String = redis_msg.get_payload().expect("payload");
-                let msg: LilaOut = serde_json::from_str(&payload).expect("lila message");
+                let redis_msg = incoming.get_message().expect("get message");
+                let payload: String = redis_msg.get_payload().expect("get payload");
+                let msg: LilaOut = serde_json::from_str(&payload).expect("lila out");
                 app.received(msg);
             }
         });
-        println!("after spawn");
 
         ws::listen("127.0.0.1:9664", move |sender| {
             Socket {
@@ -333,6 +332,5 @@ fn main() {
                 idle_timeout: None
             }
         }).expect("ws listen");
-        println!("after listen");
-    }).expect("scoped recv thread");
+    }).expect("scope");
 }
