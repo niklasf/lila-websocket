@@ -13,7 +13,7 @@ use mio_extras::timer::Timeout;
 
 use std::collections::{HashMap, HashSet};
 use std::str;
-use std::sync::{Arc, RwLock};
+use std::sync::RwLock;
 
 /// Messages we send to lila.
 #[derive(Serialize)]
@@ -146,7 +146,7 @@ impl Handler for DefaultHandler { }
 
 /// A Websocket client connection.
 struct Socket {
-    app: Arc<App>,
+    app: &'static App,
     sender: Sender,
     uid: Option<String>,
     watching: HashSet<String>,
@@ -287,8 +287,7 @@ fn user_id(cookie: &SessionCookie) -> Option<String> {
 fn main() {
     crossbeam::scope(|s| {
         let (redis_sink, redis_recv) = crossbeam::channel::unbounded();
-        let app = Arc::new(App::new(redis_sink));
-        let app_inner = app.clone();
+        let app: &'static App = Box::leak(Box::new(App::new(redis_sink)));
 
         // Thread for outgoing messages to lila.
         s.spawn(move |_| {
@@ -320,14 +319,14 @@ fn main() {
                 let redis_msg = incoming.get_message().expect("incoming message");
                 let payload: String = redis_msg.get_payload().expect("payload");
                 let msg: LilaOut = serde_json::from_str(&payload).expect("lila message");
-                app_inner.received(msg);
+                app.received(msg);
             }
         });
         println!("after spawn");
 
         ws::listen("127.0.0.1:9664", move |sender| {
             Socket {
-                app: app.clone(),
+                app,
                 sender,
                 uid: None,
                 watching: HashSet::new(),
