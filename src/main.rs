@@ -9,7 +9,7 @@ use cookie::Cookie;
 use serde::{Serialize, Deserialize};
 use serde_json::Value as JsonValue;
 
-use ws::{Handshake, Handler, Frame, Sender, Message, CloseCode};
+use ws::{Handshake, Handler, Sender, Message, CloseCode};
 use ws::util::Token;
 use mio_extras::timer::Timeout;
 
@@ -180,11 +180,10 @@ impl Handler for Socket {
                 let (name, value) = c.name_value();
                 Some(value.to_owned()).filter(|_| name == "lila2")
             })
-            .and_then(|s| {
-                s.find('-').and_then(|idx| serde_urlencoded::from_str::<SessionCookie>(&s[(idx + 1)..]).ok())
-            })
+            .and_then(|s| serde_urlencoded::from_str::<SessionCookie>(&s).ok())
             .and_then(|c| {
                 let query = doc! { "_id": c.session_id, "up": true, };
+                log::info!("{:?}", query);
                 let mut opts = FindOptions::new();
                 opts.projection = Some(doc! { "user": true });
                 match self.app.session_store.find_one(Some(query), Some(opts)) {
@@ -200,7 +199,7 @@ impl Handler for Socket {
                 }
             });
 
-        //self.uid = None;
+        self.uid = None;
 
         // Add socket to by_user map.
         if let Some(ref uid) = self.uid {
@@ -252,6 +251,8 @@ impl Handler for Socket {
     }
 
     fn on_message(&mut self, msg: Message) -> ws::Result<()> {
+        self.sender.timeout(10_000, IDLE_TIMEOUT)?;
+
         let msg = msg.as_text()?;
         if msg == "null" {
             // Fast path for ping.
@@ -295,16 +296,7 @@ impl Handler for Socket {
         log::info!("closing socket due to timeout");
         self.sender.close(CloseCode::Away)
     }
-
-    fn on_frame(&mut self, frame: Frame) -> ws::Result<Option<Frame>> {
-        self.sender.timeout(10_000, IDLE_TIMEOUT)?;
-        DefaultHandler.on_frame(frame)
-    }
 }
-
-/// Used to get the normal `on_frame` behavior.
-struct DefaultHandler;
-impl Handler for DefaultHandler { }
 
 fn main() {
     env_logger::init();
