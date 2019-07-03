@@ -229,18 +229,17 @@ impl Handler for Socket {
             // Update by_user.
             let mut by_user = self.app.by_user.write().expect("lock by_user for close");
             let entry = by_user.get_mut(&uid).expect("uid in map");
-            let len_before = entry.len();
-            entry.retain(|s| s.token() != self.sender.token());
-            assert_eq!(entry.len() + 1, len_before);
+            let idx = entry.iter().position(|s| s.token() == self.sender.token()).expect("uid in by_user");
+            entry.swap_remove(idx);
+
 
             // Update by_game.
             let our_token = self.sender.token();
             let mut by_game = self.app.by_game.write().expect("lock by_game for close");
             for game in self.watching.drain() {
                 let watchers = by_game.get_mut(&game).expect("game in map");
-                let len_before = watchers.len();
-                watchers.retain(|s| s.token() != our_token);
-                assert_eq!(watchers.len() + 1, len_before);
+                let idx = watchers.iter().position(|s| s.token() == our_token).expect("sender in watchers");
+                watchers.swap_remove(idx);
                 if watchers.is_empty() {
                     by_game.remove(&game);
                 }
