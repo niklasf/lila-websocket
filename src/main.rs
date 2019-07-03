@@ -15,7 +15,7 @@ use mio_extras::timer::Timeout;
 
 use std::collections::{HashMap, HashSet};
 use std::str;
-use std::sync::RwLock;
+use std::sync::{RwLock, Mutex};
 
 /// Messages we send to lila.
 #[derive(Serialize)]
@@ -55,6 +55,10 @@ enum LilaOut {
         users: Vec<String>,
         payload: JsonValue,
     },
+    #[serde(rename = "/tell/all")]
+    TellAll {
+        payload: JsonValue,
+    }
 }
 
 /// Messages we send to Websocket clients.
@@ -98,6 +102,7 @@ struct App {
     by_game: RwLock<HashMap::<String, Vec<Sender>>>,
     redis_sink: crossbeam::channel::Sender<LilaIn>,
     session_store: mongodb::coll::Collection,
+    broadcaster: Mutex<Option<Sender>>,
 }
 
 impl App {
@@ -107,6 +112,7 @@ impl App {
             by_game: RwLock::new(HashMap::new()),
             redis_sink,
             session_store,
+            broadcaster: Mutex::new(None),
         }
     }
 
@@ -136,6 +142,13 @@ impl App {
                             }
                         }
                     }
+                }
+            }
+            LilaOut::TellAll { payload } => {
+                let msg = serde_json::to_string(&payload).expect("serialize broadcast");
+                let broadcaster = self.broadcaster.lock().expect("broadcaster lock");
+                if let Err(err) = broadcaster.as_ref().expect("broadcaster").send(msg) {
+                    log::warn!("failed to send broadcast: {:?}", err);
                 }
             }
             LilaOut::Move { ref game_id, ref fen, ref m } => {
@@ -370,7 +383,7 @@ fn main() {
         settings.max_connections = 40_000;
         settings.tcp_nodelay = true;
 
-        ws::Builder::new()
+        let server = ws::Builder::new()
             .with_settings(settings)
             .build(move |sender| {
                 Socket {
@@ -381,7 +394,11 @@ fn main() {
                     idle_timeout: None
                 }
             })
-            .expect("valid settings")
+            .expect("valid settings");
+
+        *app.broadcaster.lock().expect("broadcaster lock") = Some(server.broadcaster());
+
+        server
             .listen("127.0.0.1:9664")
             .expect("ws listen");
     }).expect("scope");
