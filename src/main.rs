@@ -2,8 +2,8 @@
 // - Decide if nginx should be involved
 // - Ready on lila's side?
 // - Communicate count of online players
-// - Can't do one mongodb connection per client
 // - Better error handling
+// - Optimize mongodb query
 
 use mongodb::ThreadedClient as _;
 use mongodb::db::ThreadedDatabase as _;
@@ -100,14 +100,16 @@ struct App {
     by_user: RwLock<HashMap::<String, Vec<Sender>>>,
     by_game: RwLock<HashMap::<String, Vec<Sender>>>,
     redis_sink: crossbeam::channel::Sender<String>,
+    session_store: mongodb::coll::Collection,
 }
 
 impl App {
-    fn new(redis_sink: crossbeam::channel::Sender<String>) -> App {
+    fn new(redis_sink: crossbeam::channel::Sender<String>, session_store: mongodb::coll::Collection) -> App {
         App {
             by_user: RwLock::new(HashMap::new()),
             by_game: RwLock::new(HashMap::new()),
-            redis_sink
+            redis_sink,
+            session_store,
         }
     }
 
@@ -173,8 +175,21 @@ impl Handler for Socket {
                 Some(value.to_owned()).filter(|_| name == "lila2")
             })
             .and_then(|s| serde_urlencoded::from_str::<SessionCookie>(&s).ok())
-            .as_ref()
-            .and_then(user_id);
+            .and_then(|c| {
+                let mut query = mongodb::Document::new();
+                query.insert("_id", &c.session_id);
+                match self.app.session_store.find_one(Some(query), None) {
+                    Ok(Some(doc)) => doc.get_str("user").map(|s| s.to_owned()).ok(),
+                    Ok(None) => {
+                        log::info!("session store lookup with expired sid");
+                        None
+                    }
+                    Err(err) => {
+                        log::error!("session store query failed: {:?}", err);
+                        None
+                    }
+                }
+            });
 
         // Add socket to by_user map.
         if let Some(ref uid) = self.uid {
@@ -277,29 +292,19 @@ impl Handler for Socket {
 
 /// Used to get the normal `on_frame` behavior.
 struct DefaultHandler;
-
 impl Handler for DefaultHandler { }
-
-fn user_id(cookie: &SessionCookie) -> Option<String> {
-    let mut query = mongodb::Document::new();
-    query.insert("_id", &cookie.session_id);
-
-    // TODO: Currently making a new connection for each query.
-    mongodb::Client::connect("127.0.0.1", 27017)
-        .expect("mongodb connection")
-        .db("lichess")
-        .collection("security")
-        .find_one(Some(query), None)
-        .expect("query by sid")
-        .and_then(|doc| doc.get_str("user").map(|s| s.to_owned()).ok())
-}
 
 fn main() {
     env_logger::init();
 
     crossbeam::scope(|s| {
+        let session_store = mongodb::Client::connect("127.0.0.1", 27017)
+            .expect("mongodb connect")
+            .db("lichess")
+            .collection("security");
+
         let (redis_sink, redis_recv) = crossbeam::channel::unbounded();
-        let app: &'static App = Box::leak(Box::new(App::new(redis_sink)));
+        let app: &'static App = Box::leak(Box::new(App::new(redis_sink, session_store)));
 
         // Thread for outgoing messages to lila.
         s.spawn(move |_| {
