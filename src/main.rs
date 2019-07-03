@@ -180,10 +180,11 @@ impl Handler for Socket {
                 let (name, value) = c.name_value();
                 Some(value.to_owned()).filter(|_| name == "lila2")
             })
+            .map(|d| dbg!(d))
             .and_then(|s| serde_urlencoded::from_str::<SessionCookie>(&s).ok())
+            .map(|d| dbg!(d))
             .and_then(|c| {
                 let query = doc! { "_id": c.session_id, "up": true, };
-                log::info!("{:?}", query);
                 let mut opts = FindOptions::new();
                 opts.projection = Some(doc! { "user": true });
                 match self.app.session_store.find_one(Some(query), Some(opts)) {
@@ -221,6 +222,13 @@ impl Handler for Socket {
     fn on_close(&mut self, _: CloseCode, _: &str) {
         // Update connection count.
         self.app.publish(LilaIn::Dec);
+
+        // Clear timeout.
+        if let Some(timeout) = self.idle_timeout.take() {
+            if let Err(err) = self.sender.cancel(timeout) {
+                log::error!("failed to clear timeout: {:?}", err);
+            }
+        }
 
         // Update by_user.
         if let Some(uid) = self.uid.take() {
@@ -284,6 +292,7 @@ impl Handler for Socket {
 
     fn on_new_timeout(&mut self, event: Token, timeout: Timeout) -> ws::Result<()> {
         assert_eq!(event, IDLE_TIMEOUT);
+        //let timeout = dbg!(timeout);
         if let Some(old_timeout) = self.idle_timeout.take() {
             self.sender.cancel(old_timeout)?;
         }
