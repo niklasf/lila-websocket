@@ -76,7 +76,9 @@ enum SocketIn<'a> {
         id: &'a str,
         fen: &'a str,
         lm: &'a str,
-    }
+    },
+    #[serde(rename = "mlat")]
+    MoveLatency { d: u32 },
 }
 
 /// Messages we receive from Websocket clients.
@@ -89,6 +91,8 @@ enum SocketOut {
     Notified,
     #[serde(rename = "startWatching")]
     StartWatching { d: String },
+    #[serde(rename = "moveLat")]
+    MoveLatency { d: bool },
 }
 
 /// Session cookie from Play framework.
@@ -106,6 +110,7 @@ const IDLE_TIMEOUT: Token = Token(1);
 struct App {
     by_user: RwLock<HashMap::<String, Vec<Sender>>>,
     by_game: RwLock<HashMap::<String, Vec<Sender>>>,
+    watching_mlat: RwLock<HashSet<Sender>>,
     redis_sink: crossbeam::channel::Sender<LilaIn>,
     session_store: mongodb::coll::Collection,
     broadcaster: OnceCell<Sender>,
@@ -121,6 +126,7 @@ impl App {
             session_store,
             broadcaster: OnceCell::new(),
             connection_count: AtomicU32::new(0),
+            watching_mlat: RwLock::new(HashSet::new()),
         }
     }
 
@@ -174,10 +180,20 @@ impl App {
                     }
                 }
             }
-            LilaOut::MoveLatency { value: _ } => {
+            LilaOut::MoveLatency { value } => {
+                // Respond with our stats (connection count).
                 self.publish(LilaIn::Count {
                     value: self.connection_count.load(Ordering::Relaxed)
                 });
+
+                // Update watching clients.
+                let msg = serde_json::to_string(&SocketIn::MoveLatency { d: value }).expect("serialize mlat");
+                let watching_mlat = self.watching_mlat.read().expect("read watching_mlat");
+                for sender in watching_mlat.iter() {
+                    if let Err(err) = sender.send(msg.clone()) {
+                        log::warn!("failed to send mlat: {:?}", err);
+                    }
+                }
             }
         }
     }
@@ -311,6 +327,15 @@ impl Handler for Socket {
             Ok(SocketOut::StartWatching { d }) => {
                 log::debug!("start watching: {}", d);
                 self.app.publish(LilaIn::Watch { game: d });
+                Ok(())
+            },
+            Ok(SocketOut::MoveLatency { d }) => {
+                let mut watching_mlat = self.app.watching_mlat.write().expect("write watching_mlat");
+                if d {
+                    watching_mlat.insert(self.sender.clone());
+                } else {
+                    watching_mlat.remove(&self.sender);
+                }
                 Ok(())
             },
             Err(err) => {
