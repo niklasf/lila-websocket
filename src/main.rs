@@ -3,7 +3,6 @@
 // - Ready on lila's side?
 // - Communicate count of online players
 // - Can't do one mongodb connection per client
-// - Better logging
 // - Better error handling
 
 use mongodb::ThreadedClient as _;
@@ -184,7 +183,7 @@ impl Handler for Socket {
                 .entry(uid.to_owned())
                 .and_modify(|v| v.push(self.sender.clone()))
                 .or_insert_with(|| {
-                    println!("first open: {}", uid);
+                    log::debug!("first open: {}", uid);
                     self.app.publish(LilaIn::Connect { user: uid });
                     vec![self.sender.clone()]
                 });
@@ -217,9 +216,10 @@ impl Handler for Socket {
             }
 
             // Last remaining connection closed.
+            // TODO: Can we use entry API here?
             if entry.is_empty() {
                 by_user.remove(&uid);
-                println!("last close: {}", uid);
+                log::debug!("last close: {}", uid);
                 self.app.publish(LilaIn::Disconnect { user: &uid });
             }
         }
@@ -237,18 +237,18 @@ impl Handler for Socket {
             }
             Ok(SocketOut::Notified) => {
                 if let Some(ref uid) = self.uid {
-                    println!("notified: {}", uid);
+                    log::debug!("notified: {}", uid);
                     self.app.publish(LilaIn::Notified { user: uid });
                 }
                 Ok(())
             }
             Ok(SocketOut::StartWatching { d }) => {
-                println!("start watching: {}", d);
+                log::debug!("start watching: {}", d);
                 self.app.publish(LilaIn::Watch { game: &d });
                 Ok(())
             },
             Err(err) => {
-                println!("protocol violation: {:?}", err);
+                log::warn!("protocol violation of client: {:?}", err);
                 self.sender.close(CloseCode::Protocol)
             }
         }
@@ -265,7 +265,7 @@ impl Handler for Socket {
 
     fn on_timeout(&mut self, event: Token) -> ws::Result<()> {
         assert_eq!(event, IDLE_TIMEOUT);
-        println!("closing socket due to timeout");
+        log::info!("closing socket due to timeout");
         self.sender.close(CloseCode::Away)
     }
 
@@ -295,6 +295,8 @@ fn user_id(cookie: &SessionCookie) -> Option<String> {
 }
 
 fn main() {
+    env_logger::init();
+
     crossbeam::scope(|s| {
         let (redis_sink, redis_recv) = crossbeam::channel::unbounded();
         let app: &'static App = Box::leak(Box::new(App::new(redis_sink)));
@@ -310,7 +312,7 @@ fn main() {
                 let msg = redis_recv.recv().expect("redis recv");
                 let ret: u32 = redis.publish("site-in", msg).expect("publish site-in");
                 if ret == 0 {
-                    println!("lila missed a message");
+                    log::error!("lila missed as message");
                 }
             }
         });

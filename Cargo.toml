@@ -1,5 +1,5 @@
 [package]
-name = "lila-socket"
+name = "lila-websocket"
 version = "0.1.0"
 authors = ["Niklas Fiekas <niklas.fiekas@backscattering.de>"]
 edition = "2018"
@@ -14,3 +14,5 @@ ws = "0.8.1"
 mio-extras = "2.0.5"
 redis = "0.10.0"
 crossbeam = "0.7.1"
+log = "0.4.6"
+env_logger = "0.6.2"
