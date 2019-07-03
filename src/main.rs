@@ -180,7 +180,9 @@ impl Handler for Socket {
                 let (name, value) = c.name_value();
                 Some(value.to_owned()).filter(|_| name == "lila2")
             })
-            .and_then(|s| serde_urlencoded::from_str::<SessionCookie>(&s).ok())
+            .and_then(|s| {
+                s.find('-').and_then(|idx| serde_urlencoded::from_str::<SessionCookie>(&s[(idx + 1)..]).ok())
+            })
             .and_then(|c| {
                 let query = doc! { "_id": c.session_id, "up": true, };
                 let mut opts = FindOptions::new();
@@ -197,6 +199,8 @@ impl Handler for Socket {
                     }
                 }
             });
+
+        //self.uid = None;
 
         // Add socket to by_user map.
         if let Some(ref uid) = self.uid {
