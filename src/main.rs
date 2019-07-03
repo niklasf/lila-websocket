@@ -157,6 +157,7 @@ struct Socket {
 
 impl Handler for Socket {
     fn on_open(&mut self, handshake: Handshake) -> ws::Result<()> {
+        // Ask mongodb for user id based on session cookie.
         self.uid = handshake.request.header("cookie")
             .and_then(|h| str::from_utf8(h).ok())
             .and_then(|h| Cookie::parse(h).ok())
@@ -168,18 +169,20 @@ impl Handler for Socket {
             .as_ref()
             .and_then(user_id);
 
+        // Add socket to by_user map.
         if let Some(ref uid) = self.uid {
             let mut by_user = self.app.by_user.write().expect("lock by_user for open");
             by_user
                 .entry(uid.to_owned())
                 .and_modify(|v| v.push(self.sender.clone()))
                 .or_insert_with(|| {
-                    println!("connected: {}", uid);
+                    println!("first open: {}", uid);
                     self.app.publish(LilaIn::Connect { user: uid });
                     vec![self.sender.clone()]
                 });
         }
 
+        // Start idle timeout.
         self.sender.timeout(10_000, IDLE_TIMEOUT)
     }
 
@@ -208,7 +211,7 @@ impl Handler for Socket {
             // Last remaining connection closed.
             if entry.is_empty() {
                 by_user.remove(&uid);
-                println!("disconnected: {}", uid);
+                println!("last close: {}", uid);
                 self.app.publish(LilaIn::Disconnect { user: &uid });
             }
         }
@@ -232,6 +235,7 @@ impl Handler for Socket {
                 Ok(())
             }
             Ok(SocketOut::StartWatching { d }) => {
+                println!("start watching: {}", d);
                 self.app.publish(LilaIn::Watch { game: &d });
                 Ok(())
             },
@@ -253,6 +257,7 @@ impl Handler for Socket {
 
     fn on_timeout(&mut self, event: Token) -> ws::Result<()> {
         assert_eq!(event, IDLE_TIMEOUT);
+        println!("closing socket due to timeout");
         self.sender.close(CloseCode::Away)
     }
 
