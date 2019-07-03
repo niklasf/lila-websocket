@@ -35,7 +35,7 @@ enum LilaIn {
 
 /// Messages we receive from lila.
 #[derive(Deserialize)]
-#[serde(tag = "path", content = "data")]
+#[serde(tag = "path")]
 enum LilaOut {
     #[serde(rename = "/move")]
     Move {
