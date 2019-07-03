@@ -2,7 +2,6 @@
 // - Decide if nginx should be involved
 // - Ready on lila's side?
 // - Communicate count of online players
-// - Better error handling
 
 use mongodb::ThreadedClient as _;
 use mongodb::db::ThreadedDatabase as _;
@@ -124,7 +123,9 @@ impl App {
                 let by_user = self.by_user.read().expect("by_user for tell");
                 if let Some(entry) = by_user.get(&user) {
                     for sender in entry {
-                        let _ = sender.send(Message::text(payload.to_string()));
+                        if let Err(err) = sender.send(Message::text(payload.to_string())) {
+                            log::warn!("failed to tell ({}): {:?}", user, err);
+                        }
                     }
                 }
             }
@@ -133,7 +134,9 @@ impl App {
                 for user in &users {
                     if let Some(entry) = by_user.get(user) {
                         for sender in entry {
-                            let _ = sender.send(Message::text(payload.to_string()));
+                            if let Err(err) = sender.send(Message::text(payload.to_string())) {
+                                log::warn!("failed to tell ({}): {:?}", user, err);
+                            }
                         }
                     }
                 }
@@ -148,7 +151,9 @@ impl App {
                     }).expect("serialize fen"));
 
                     for sender in entry {
-                        let _ = sender.send(msg.clone());
+                        if let Err(err) = sender.send(msg.clone()) {
+                            log::warn!("failed to send fen: {:?}", err);
+                        }
                     }
                 }
             }
