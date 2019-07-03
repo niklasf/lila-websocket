@@ -326,6 +326,8 @@ fn main() {
                 .get_connection()
                 .expect("redis connection for publish");
 
+            let _: () = redis.set("connections", 0).expect("reset connections");
+
             loop {
                 match redis_recv.recv().expect("redis recv") {
                     LilaIn::Inc => redis.incr("connections", 1).expect("incr connections"),
