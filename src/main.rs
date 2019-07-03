@@ -21,6 +21,7 @@ use mio_extras::timer::Timeout;
 use std::collections::{HashMap, HashSet};
 use std::str;
 use std::sync::RwLock;
+use std::sync::atomic::{AtomicU32, Ordering};
 
 /// Messages we send to lila.
 #[derive(Serialize)]
@@ -101,6 +102,7 @@ struct App {
     by_game: RwLock<HashMap::<String, Vec<Sender>>>,
     redis_sink: crossbeam::channel::Sender<String>,
     session_store: mongodb::coll::Collection,
+    connection_count: AtomicU32,
 }
 
 impl App {
@@ -110,6 +112,7 @@ impl App {
             by_game: RwLock::new(HashMap::new()),
             redis_sink,
             session_store,
+            connection_count: AtomicU32::new(0),
         }
     }
 
@@ -172,6 +175,10 @@ struct Socket {
 
 impl Handler for Socket {
     fn on_open(&mut self, handshake: Handshake) -> ws::Result<()> {
+        // Inc connection count. (To avoid overflow, the corresponding
+        // decrement needs to be ordered after this.)
+        self.app.connection_count.fetch_add(1, Ordering::SeqCst);
+
         // Ask mongodb for user id based on session cookie.
         self.uid = handshake.request.header("cookie")
             .and_then(|h| str::from_utf8(h).ok())
@@ -216,6 +223,8 @@ impl Handler for Socket {
     }
 
     fn on_close(&mut self, _: CloseCode, _: &str) {
+        self.app.connection_count.fetch_sub(1, Ordering::SeqCst);
+
         if let Some(uid) = self.uid.take() {
             // Update by_user.
             let mut by_user = self.app.by_user.write().expect("lock by_user for close");
