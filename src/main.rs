@@ -256,12 +256,13 @@ impl Handler for Socket {
     }
 
     fn on_message(&mut self, msg: Message) -> ws::Result<()> {
-        if msg.as_text()? == "null" {
+        let msg = msg.as_text()?;
+        if msg == "null" {
             // Fast path for ping.
             return self.sender.send(Message::text("0"));
         }
 
-        match serde_json::from_str(msg.as_text()?) {
+        match serde_json::from_str(msg) {
             Ok(SocketOut::Ping { .. }) => {
                 self.sender.send(Message::text("0"))
             }
