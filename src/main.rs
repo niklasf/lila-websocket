@@ -3,10 +3,11 @@
 // - Ready on lila's side?
 // - Communicate count of online players
 // - Better error handling
-// - Optimize mongodb query
 
 use mongodb::ThreadedClient as _;
 use mongodb::db::ThreadedDatabase as _;
+use mongodb::coll::options::FindOptions;
+use bson::{doc, bson};
 
 use redis::Commands as _;
 
@@ -176,9 +177,10 @@ impl Handler for Socket {
             })
             .and_then(|s| serde_urlencoded::from_str::<SessionCookie>(&s).ok())
             .and_then(|c| {
-                let mut query = mongodb::Document::new();
-                query.insert("_id", &c.session_id);
-                match self.app.session_store.find_one(Some(query), None) {
+                let query = doc! { "_id": c.session_id, "up": true, };
+                let mut opts = FindOptions::new();
+                opts.projection = Some(doc! { "user": true });
+                match self.app.session_store.find_one(Some(query), Some(opts)) {
                     Ok(Some(doc)) => doc.get_str("user").map(|s| s.to_owned()).ok(),
                     Ok(None) => {
                         log::info!("session store lookup with expired sid");
