@@ -360,6 +360,7 @@ fn main() {
             loop {
                 let redis_msg = incoming.get_message().expect("get message");
                 let payload: String = redis_msg.get_payload().expect("get payload");
+                log::debug!("site-out: {}", payload);
                 let msg: LilaOut = serde_json::from_str(&payload).expect("lila out");
                 app.received(msg);
             }
