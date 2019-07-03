@@ -181,7 +181,10 @@ impl Handler for Socket {
                 Some(value.to_owned()).filter(|_| name == "lila2")
             })
             .map(|d| dbg!(d))
-            .and_then(|s| serde_urlencoded::from_str::<SessionCookie>(&s).ok())
+            .and_then(|s| {
+                let idx = s.find('-').map(|n| n + 1).unwrap_or(0);
+                serde_urlencoded::from_str::<SessionCookie>(&s[idx..]).ok()
+            })
             .map(|d| dbg!(d))
             .and_then(|c| {
                 let query = doc! { "_id": c.session_id, "up": true, };
