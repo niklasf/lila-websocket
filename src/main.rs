@@ -203,8 +203,6 @@ impl Handler for Socket {
                 }
             });
 
-        self.uid = None;
-
         // Add socket to by_user map.
         if let Some(ref uid) = self.uid {
             let mut by_user = self.app.by_user.write().expect("lock by_user for open");
