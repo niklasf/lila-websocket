@@ -355,7 +355,7 @@ fn main() {
                 .expect("redis connection for subscribe");
 
             let mut incoming = redis.as_pubsub();
-            incoming.subscribe("lila-out").expect("subscribe lila-out");
+            incoming.subscribe("site-out").expect("subscribe site-out");
 
             loop {
                 let redis_msg = incoming.get_message().expect("get message");
