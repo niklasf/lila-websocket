@@ -159,7 +159,7 @@ impl App {
                 }
             }
             LilaOut::TellAll { payload } => {
-                let msg = serde_json::to_string(&payload).expect("serialize broadcast");
+                let msg = serde_json::to_string(&payload).expect("serialize for broadcast");
                 if let Err(err) = self.broadcaster.get().expect("broadcaster").send(msg) {
                     log::warn!("failed to send broadcast: {:?}", err);
                 }
@@ -224,13 +224,11 @@ impl Handler for Socket {
                     .next()
             })
             .and_then(|h| Cookie::parse(h).ok())
-            .map(|c| dbg!(c))
             .and_then(|c| {
                 let s = c.value();
                 let idx = s.find('-').map(|n| n + 1).unwrap_or(0);
                 serde_urlencoded::from_str::<SessionCookie>(&s[idx..]).ok()
             })
-            .map(|d| dbg!(d))
             .and_then(|c| {
                 let query = doc! { "_id": c.session_id, "up": true, };
                 let mut opts = FindOptions::new();
@@ -347,7 +345,6 @@ impl Handler for Socket {
 
     fn on_new_timeout(&mut self, event: Token, timeout: Timeout) -> ws::Result<()> {
         assert_eq!(event, IDLE_TIMEOUT);
-        //let timeout = dbg!(timeout);
         if let Some(old_timeout) = self.idle_timeout.take() {
             self.sender.cancel(old_timeout)?;
         }
@@ -384,6 +381,7 @@ fn main() {
             loop {
                 let msg = redis_recv.recv().expect("redis recv");
                 let msg = serde_json::to_string(&msg).expect("serialize");
+                log::debug!("site-in: {}", msg);
                 let ret: u32 = redis.publish("site-in", msg).expect("publish site-in");
                 if ret == 0 {
                     log::error!("lila missed as message");
