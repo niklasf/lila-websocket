@@ -328,15 +328,15 @@ fn main() {
 
             loop {
                 match redis_recv.recv().expect("redis recv") {
-                    LilaIn::Inc => (),
-                    LilaIn::Dec => (),
+                    LilaIn::Inc => redis.incr("connections", 1).expect("incr connections"),
+                    LilaIn::Dec => redis.incr("connections", -1).expect("decr connections"),
                     msg => {
                         let msg = serde_json::to_string(&msg).expect("serialize");
                         let ret: u32 = redis.publish("site-in", msg).expect("publish site-in");
                         if ret == 0 {
                             log::error!("lila missed as message");
                         }
-                    }
+                    },
                 }
             }
         });
