@@ -81,8 +81,8 @@ enum SocketOut {
 /// of inactivity.
 const IDLE_TIMEOUT: Token = Token(1);
 
+/// State of this Websocket server.
 struct App {
-    // TODO: Find better datastructures, possibly lock-free.
     by_user: RwLock<HashMap::<String, Vec<Sender>>>,
     by_game: RwLock<HashMap::<String, Vec<Sender>>>,
     redis_sink: crossbeam::channel::Sender<String>,
@@ -139,63 +139,12 @@ impl App {
     }
 }
 
-fn main() {
-    crossbeam::scope(|s| {
-        let (redis_sink, redis_recv) = crossbeam::channel::unbounded();
-        let app = Arc::new(App::new(redis_sink));
-        let app_inner = app.clone();
-
-        // Thread for outgoing messages to lila.
-        s.spawn(move |_| {
-            let redis = redis::Client::open("redis://127.0.0.1/")
-                .expect("redis open for publish")
-                .get_connection()
-                .expect("redis connection for publish");
-
-            loop {
-                let msg = redis_recv.recv().expect("redis recv");
-                let ret: u32 = redis.publish("site-in", msg).expect("publish");
-                if ret == 0 {
-                    println!("lila missed a message");
-                }
-            }
-        });
-
-        // Thread for incoming messages from lila.
-        s.spawn(move |_| {
-            let mut redis = redis::Client::open("redis://127.0.0.1/")
-                .expect("redis open")
-                .get_connection()
-                .expect("redis connection");
-
-            let mut incoming = redis.as_pubsub();
-            incoming.subscribe("lila-out").expect("subscribe lila-out");
-
-            loop {
-                let redis_msg = incoming.get_message().expect("incoming message");
-                let payload: String = redis_msg.get_payload().expect("payload");
-                let msg: LilaOut = serde_json::from_str(&payload).expect("lila message");
-                app_inner.received(msg);
-            }
-        });
-        println!("after spawn");
-
-        ws::listen("127.0.0.1:9664", move |sender| {
-            Socket {
-                app: app.clone(),
-                sender,
-                uid: None,
-                watching: HashSet::new(),
-                idle_timeout: None
-            }
-        }).expect("ws listen");
-        println!("after listen");
-    }).expect("scoped recv thread");
-}
-
+/// Used to get the normal `on_frame` behavior.
 struct DefaultHandler;
+
 impl Handler for DefaultHandler { }
 
+/// A Websocket client connection.
 struct Socket {
     app: Arc<App>,
     sender: Sender,
@@ -333,4 +282,58 @@ fn user_id(cookie: &SessionCookie) -> Option<String> {
         .find_one(Some(query), None)
         .expect("query by sid")
         .and_then(|doc| doc.get_str("user").map(|s| s.to_owned()).ok())
+}
+
+fn main() {
+    crossbeam::scope(|s| {
+        let (redis_sink, redis_recv) = crossbeam::channel::unbounded();
+        let app = Arc::new(App::new(redis_sink));
+        let app_inner = app.clone();
+
+        // Thread for outgoing messages to lila.
+        s.spawn(move |_| {
+            let redis = redis::Client::open("redis://127.0.0.1/")
+                .expect("redis open for publish")
+                .get_connection()
+                .expect("redis connection for publish");
+
+            loop {
+                let msg = redis_recv.recv().expect("redis recv");
+                let ret: u32 = redis.publish("site-in", msg).expect("publish");
+                if ret == 0 {
+                    println!("lila missed a message");
+                }
+            }
+        });
+
+        // Thread for incoming messages from lila.
+        s.spawn(move |_| {
+            let mut redis = redis::Client::open("redis://127.0.0.1/")
+                .expect("redis open")
+                .get_connection()
+                .expect("redis connection");
+
+            let mut incoming = redis.as_pubsub();
+            incoming.subscribe("lila-out").expect("subscribe lila-out");
+
+            loop {
+                let redis_msg = incoming.get_message().expect("incoming message");
+                let payload: String = redis_msg.get_payload().expect("payload");
+                let msg: LilaOut = serde_json::from_str(&payload).expect("lila message");
+                app_inner.received(msg);
+            }
+        });
+        println!("after spawn");
+
+        ws::listen("127.0.0.1:9664", move |sender| {
+            Socket {
+                app: app.clone(),
+                sender,
+                uid: None,
+                watching: HashSet::new(),
+                idle_timeout: None
+            }
+        }).expect("ws listen");
+        println!("after listen");
+    }).expect("scoped recv thread");
 }
