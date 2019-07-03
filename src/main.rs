@@ -1,3 +1,11 @@
+// Before production ready:
+// - Decide if nginx should be involved
+// - Ready on lila's side?
+// - Communicate count of online players
+// - Can't do one mongodb connection per client
+// - Better logging
+// - Better error handling
+
 use mongodb::ThreadedClient as _;
 use mongodb::db::ThreadedDatabase as _;
 
