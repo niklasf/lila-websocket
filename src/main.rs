@@ -15,7 +15,8 @@ use mio_extras::timer::Timeout;
 
 use std::collections::{HashMap, HashSet};
 use std::str;
-use std::sync::{RwLock, Mutex};
+use std::sync::RwLock;
+use once_cell::sync::OnceCell;
 
 /// Messages we send to lila.
 #[derive(Serialize)]
@@ -102,7 +103,7 @@ struct App {
     by_game: RwLock<HashMap::<String, Vec<Sender>>>,
     redis_sink: crossbeam::channel::Sender<LilaIn>,
     session_store: mongodb::coll::Collection,
-    broadcaster: Mutex<Option<Sender>>,
+    broadcaster: OnceCell<Sender>,
 }
 
 impl App {
@@ -112,7 +113,7 @@ impl App {
             by_game: RwLock::new(HashMap::new()),
             redis_sink,
             session_store,
-            broadcaster: Mutex::new(None),
+            broadcaster: OnceCell::new(),
         }
     }
 
@@ -146,8 +147,7 @@ impl App {
             }
             LilaOut::TellAll { payload } => {
                 let msg = serde_json::to_string(&payload).expect("serialize broadcast");
-                let broadcaster = self.broadcaster.lock().expect("broadcaster lock");
-                if let Err(err) = broadcaster.as_ref().expect("broadcaster").send(msg) {
+                if let Err(err) = self.broadcaster.get().expect("broadcaster").send(msg) {
                     log::warn!("failed to send broadcast: {:?}", err);
                 }
             }
@@ -396,7 +396,7 @@ fn main() {
             })
             .expect("valid settings");
 
-        *app.broadcaster.lock().expect("broadcaster lock") = Some(server.broadcaster());
+        app.broadcaster.set(server.broadcaster()).expect("set broadcaster");
 
         server
             .listen("127.0.0.1:9664")
