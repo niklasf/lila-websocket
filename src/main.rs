@@ -21,13 +21,13 @@ use std::sync::{RwLock, Mutex};
 #[derive(Serialize)]
 #[serde(tag = "path")]
 enum LilaIn {
-    #[serde(rename = "/connect")]
+    #[serde(rename = "connect")]
     Connect { user: String },
-    #[serde(rename = "/disconnect")]
+    #[serde(rename = "disconnect")]
     Disconnect { user: String },
-    #[serde(rename = "/notified")]
+    #[serde(rename = "notified")]
     Notified { user: String },
-    #[serde(rename = "/watch")]
+    #[serde(rename = "watch")]
     Watch { game: String },
     Inc, // updates counter
     Dec, // updates counter
@@ -37,7 +37,7 @@ enum LilaIn {
 #[derive(Deserialize)]
 #[serde(tag = "path")]
 enum LilaOut {
-    #[serde(rename = "/move")]
+    #[serde(rename = "move")]
     Move {
         #[serde(rename = "gameId")]
         game_id: String,
@@ -45,17 +45,17 @@ enum LilaOut {
         #[serde(rename = "move")]
         m: String,
     },
-    #[serde(rename = "/tell/user")]
+    #[serde(rename = "tell/user")]
     Tell {
         user: String,
         payload: JsonValue,
     },
-    #[serde(rename = "/tell/users")]
+    #[serde(rename = "tell/users")]
     TellMany {
         users: Vec<String>,
         payload: JsonValue,
     },
-    #[serde(rename = "/tell/all")]
+    #[serde(rename = "tell/all")]
     TellAll {
         payload: JsonValue,
     }
