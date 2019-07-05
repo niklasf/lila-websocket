@@ -220,7 +220,7 @@ impl App {
             LilaOut::TellAll { payload } => {
                 let msg = Message::text(payload.to_string());
                 if let Err(err) = self.broadcaster.get().expect("broadcaster").send(msg) {
-                    log::warn!("failed to send broadcast: {:?}", err);
+                    log::warn!("failed to broadcast: {:?}", err);
                 }
             }
             LilaOut::Move { ref game_id, ref fen, ref m } => {
@@ -266,7 +266,7 @@ impl App {
                 let msg = payload.to_string();
                 for sender in watching_flag.iter() {
                     if let Err(err) = sender.send(msg.clone()) {
-                        log::warn!("failed to send to flag {:?}: {:?}", flag, err);
+                        log::warn!("failed to send to flag ({:?}): {:?}", flag, err);
                     }
                 }
             }
@@ -498,7 +498,7 @@ fn main() {
             loop {
                 let msg = redis_recv.recv().expect("redis recv");
                 let msg = serde_json::to_string(&msg).expect("serialize site-in");
-                log::debug!("site-in: {}", msg);
+                log::trace!("site-in: {}", msg);
                 let ret: u32 = redis.publish("site-in", msg).expect("publish site-in");
                 if ret == 0 {
                     log::error!("lila missed as message");
@@ -520,7 +520,7 @@ fn main() {
             loop {
                 let redis_msg = incoming.get_message().expect("get message");
                 let payload: String = redis_msg.get_payload().expect("get payload");
-                log::debug!("site-out: {}", payload);
+                log::trace!("site-out: {}", payload);
                 let msg: LilaOut = serde_json::from_str(&payload).expect("deserialize site-out");
                 app.received(msg);
             }
