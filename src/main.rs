@@ -26,7 +26,7 @@ use crossbeam::channel;
 mod model;
 mod ipc;
 
-use crate::model::Flag;
+use crate::model::{Flag, GameId};
 use crate::ipc::LilaOut;
 
 #[derive(StructOpt, Clone)]
@@ -56,7 +56,7 @@ enum LilaIn {
     #[serde(rename = "notified")]
     Notified { user: String },
     #[serde(rename = "watch")]
-    Watch { game: String },
+    Watch { game: GameId },
     #[serde(rename = "count")]
     Count { value: u32 },
 }
@@ -67,7 +67,7 @@ enum LilaIn {
 enum SocketIn<'a> {
     #[serde(rename = "fen")]
     Fen {
-        id: &'a str,
+        id: &'a GameId,
         fen: &'a str,
         lm: &'a str,
     },
@@ -90,7 +90,7 @@ enum SocketOut {
     #[serde(rename = "notified")]
     Notified,
     #[serde(rename = "startWatching")]
-    StartWatching { d: String },
+    StartWatching { d: GameId },
     #[serde(rename = "moveLat")]
     MoveLatency { d: bool },
 }
@@ -115,8 +115,8 @@ const IDLE_TIMEOUT: Token = Token(1);
 /// Shared state of this Websocket server.
 struct App {
     by_user: RwLock<HashMap::<String, Vec<Sender>>>,
-    by_game: RwLock<HashMap::<String, Vec<Sender>>>,
-    watched_games: RwLock<LruCache<String, WatchedGame>>,
+    by_game: RwLock<HashMap::<GameId, Vec<Sender>>>,
+    watched_games: RwLock<LruCache<GameId, WatchedGame>>,
     flags: [RwLock<HashSet<Sender>>; 2],
     mlat: AtomicU32,
     watching_mlat: RwLock<HashSet<Sender>>,
@@ -172,15 +172,15 @@ impl App {
                 }
             }
             LilaOut::Move { game, fen, last_uci } => {
-                self.watched_games.write().put(game.to_owned(), WatchedGame {
+                self.watched_games.write().put(game.clone(), WatchedGame {
                     fen: fen.to_owned(),
                     lm: last_uci.to_owned()
                 });
 
                 let by_game = self.by_game.read();
-                if let Some(entry) = by_game.get(game) {
+                if let Some(entry) = by_game.get(&game) {
                     let msg = Message::text(SocketIn::Fen {
-                        id: game,
+                        id: &game,
                         fen,
                         lm: last_uci,
                     }.to_json_string());
@@ -227,7 +227,7 @@ struct Socket {
     app: &'static App,
     sender: Sender,
     uid: Option<String>,
-    watching: HashSet<String>,
+    watching: HashSet<GameId>,
     flag: Option<Flag>,
     idle_timeout: Option<Timeout>,
 }
@@ -378,7 +378,7 @@ impl Handler for Socket {
                         .entry(d.clone())
                         .and_modify(|v| v.push(self.sender.clone()))
                         .or_insert_with(|| {
-                            log::debug!("start watching: {}", d);
+                            log::debug!("start watching: {:?}", d);
                             self.app.publish(LilaIn::Watch { game: d });
                             vec![self.sender.clone()]
                         });

@@ -1,4 +1,4 @@
-use crate::model::Flag;
+use crate::model::{Flag, GameId};
 
 #[derive(Debug)]
 pub struct IpcError;
@@ -7,7 +7,7 @@ pub struct IpcError;
 #[derive(Debug)]
 pub enum LilaOut<'a> {
     Move {
-        game: &'a str,
+        game: GameId,
         last_uci: &'a str,
         fen: &'a str,
     },
@@ -32,7 +32,7 @@ impl<'a> LilaOut<'a> {
             (Some("move"), Some(args)) => {
                 let mut args = args.splitn(3, ' ');
                 LilaOut::Move {
-                    game: args.next().ok_or(IpcError)?,
+                    game: args.next().ok_or(IpcError)?.parse().map_err(|_| IpcError)?,
                     last_uci: args.next().ok_or(IpcError)?,
                     fen: args.next().ok_or(IpcError)?,
                 }
@@ -65,3 +65,8 @@ impl<'a> LilaOut<'a> {
         })
     }
 }
+
+/* /// Messages we send to lila.
+#[derive(Debug)]
+enum LilaIn {
+} */
