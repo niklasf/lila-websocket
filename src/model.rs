@@ -1,7 +1,6 @@
 use arrayvec::ArrayString;
 
 use std::str::FromStr;
-use std::fmt;
 
 use serde::{Deserialize, Serialize};
 
@@ -18,12 +17,6 @@ impl FromStr for GameId {
 
     fn from_str(s: &str) -> Result<GameId, InvalidGameId> {
         Ok(GameId(ArrayString::from(s).map_err(|_| InvalidGameId)?))
-    }
-}
-
-impl fmt::Display for GameId {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        self.0.fmt(f)
     }
 }
 
