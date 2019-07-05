@@ -7,7 +7,6 @@ use redis::Commands as _;
 
 use cookie::Cookie;
 use serde::{Serialize, Deserialize};
-use serde_json::Value as JsonValue;
 
 use ws::{Handshake, Handler, Sender, Message, CloseCode};
 use ws::util::Token;
@@ -28,6 +27,7 @@ mod model;
 mod ipc;
 
 use crate::model::Flag;
+use crate::ipc::LilaOut;
 
 #[derive(StructOpt, Clone)]
 struct Opt {
@@ -59,43 +59,6 @@ enum LilaIn {
     Watch { game: String },
     #[serde(rename = "count")]
     Count { value: u32 },
-}
-
-/// Messages we receive from lila.
-#[derive(Deserialize)]
-#[serde(tag = "path")]
-enum LilaOut {
-    #[serde(rename = "move")]
-    Move {
-        #[serde(rename = "gameId")]
-        game_id: String,
-        fen: String,
-        #[serde(rename = "move")]
-        m: String,
-    },
-    #[serde(rename = "tell/user")]
-    Tell {
-        user: String,
-        payload: JsonValue,
-    },
-    #[serde(rename = "tell/users")]
-    TellMany {
-        users: Vec<String>,
-        payload: JsonValue,
-    },
-    #[serde(rename = "tell/all")]
-    TellAll {
-        payload: JsonValue,
-    },
-    #[serde(rename = "mlat")]
-    MoveLatency {
-        value: u32,
-    },
-    #[serde(rename = "flag")]
-    Flag {
-        flag: Flag,
-        payload: JsonValue,
-    },
 }
 
 /// Messages we send to Websocket clients.
@@ -190,19 +153,9 @@ impl App {
 
     fn received(&self, msg: LilaOut) {
         match msg {
-            LilaOut::Tell { user, payload } => {
+            LilaOut::Tell { users, payload } => {
                 let by_user = self.by_user.read();
-                if let Some(entry) = by_user.get(&user) {
-                    for sender in entry {
-                        if let Err(err) = sender.send(Message::text(payload.to_string())) {
-                            log::warn!("failed to tell ({}): {:?}", user, err);
-                        }
-                    }
-                }
-            }
-            LilaOut::TellMany { users, payload } => {
-                let by_user = self.by_user.read();
-                for user in &users {
+                for user in users {
                     if let Some(entry) = by_user.get(user) {
                         for sender in entry {
                             if let Err(err) = sender.send(Message::text(payload.to_string())) {
@@ -218,18 +171,18 @@ impl App {
                     log::warn!("failed to broadcast: {:?}", err);
                 }
             }
-            LilaOut::Move { ref game_id, ref fen, ref m } => {
-                self.watched_games.write().put(game_id.to_owned(), WatchedGame {
+            LilaOut::Move { game, fen, last_uci } => {
+                self.watched_games.write().put(game.to_owned(), WatchedGame {
                     fen: fen.to_owned(),
-                    lm: m.to_owned()
+                    lm: last_uci.to_owned()
                 });
 
                 let by_game = self.by_game.read();
-                if let Some(entry) = by_game.get(game_id) {
+                if let Some(entry) = by_game.get(game) {
                     let msg = Message::text(SocketIn::Fen {
-                        id: game_id,
+                        id: game,
                         fen,
-                        lm: m,
+                        lm: last_uci,
                     }.to_json_string());
 
                     for sender in entry {
@@ -239,24 +192,24 @@ impl App {
                     }
                 }
             }
-            LilaOut::MoveLatency { value } => {
+            LilaOut::MoveLatency(mlat) => {
                 // Respond with our stats (connection count).
                 self.publish(LilaIn::Count {
                     value: max(0, self.connection_count.load(Ordering::Relaxed)) as u32
                 });
 
                 // Update stats.
-                self.mlat.store(value, Ordering::Relaxed);
+                self.mlat.store(mlat, Ordering::Relaxed);
 
                 // Update watching clients.
-                let msg = SocketIn::MoveLatency(value).to_json_string();
+                let msg = SocketIn::MoveLatency(mlat).to_json_string();
                 for sender in self.watching_mlat.read().iter() {
                     if let Err(err) = sender.send(msg.clone()) {
                         log::warn!("failed to send mlat: {:?}", err);
                     }
                 }
             }
-            LilaOut::Flag { flag, payload } => {
+            LilaOut::TellFlag { flag, payload } => {
                 let watching_flag = self.flags[flag as usize].read();
                 let msg = payload.to_string();
                 for sender in watching_flag.iter() {
@@ -513,11 +466,15 @@ fn main() {
             incoming.subscribe("site-out").expect("subscribe site-out");
 
             loop {
-                let redis_msg = incoming.get_message().expect("get message");
-                let payload: String = redis_msg.get_payload().expect("get payload");
-                log::trace!("site-out: {}", payload);
-                let msg: LilaOut = serde_json::from_str(&payload).expect("deserialize site-out");
-                app.received(msg);
+                let msg = incoming.get_message()
+                    .expect("get message")
+                    .get_payload::<String>()
+                    .expect("get payload");
+
+                match LilaOut::parse(&msg) {
+                    Ok(msg) => app.received(msg),
+                    Err(_) => log::error!("invalid message from lila: {}", msg),
+                }
             }
         });
 

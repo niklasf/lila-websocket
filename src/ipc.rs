@@ -1,11 +1,11 @@
 use crate::model::Flag;
 
 #[derive(Debug)]
-struct IpcError;
+pub struct IpcError;
 
 /// Messages we receive from lila.
 #[derive(Debug)]
-enum LilaOut<'a> {
+pub enum LilaOut<'a> {
     Move {
         game: &'a str,
         last_uci: &'a str,
@@ -26,7 +26,7 @@ enum LilaOut<'a> {
 }
 
 impl<'a> LilaOut<'a> {
-    fn parse(s: &'a str) -> Result<LilaOut<'a>, IpcError> {
+    pub fn parse(s: &'a str) -> Result<LilaOut<'a>, IpcError> {
         let mut tag_and_args = s.splitn(2, ' ');
         Ok(match (tag_and_args.next(), tag_and_args.next()) {
             (Some("move"), Some(args)) => {
@@ -43,6 +43,23 @@ impl<'a> LilaOut<'a> {
                     users: args.next().ok_or(IpcError)?.split(',').collect(),
                     payload: args.next().ok_or(IpcError)?,
                 }
+            },
+            (Some("tell/all"), Some(payload)) => {
+                LilaOut::TellAll { payload }
+            },
+            (Some("tell/flag"), Some(args)) => {
+                let mut args = args.splitn(2, ' ');
+                LilaOut::TellFlag {
+                    flag: match args.next() {
+                        Some("tournament") => Flag::Tournament,
+                        Some("simul") => Flag::Simul,
+                        _ => return Err(IpcError),
+                    },
+                    payload: args.next().ok_or(IpcError)?,
+                }
+            },
+            (Some("mlat"), Some(value)) => {
+                LilaOut::MoveLatency(value.parse().map_err(|_| IpcError)?)
             },
             _ => return Err(IpcError),
         })
