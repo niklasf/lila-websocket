@@ -5,7 +5,7 @@ use std::fmt;
 
 use serde::{Deserialize, Serialize, Serializer, Deserializer};
 
-/// An 8 charatcer game id.
+/// An 8 character game id.
 #[derive(Eq, PartialEq, Hash, Clone, Debug)]
 pub struct GameId(ArrayString<[u8; 8]>);
 
