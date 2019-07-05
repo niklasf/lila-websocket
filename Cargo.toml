@@ -1,8 +1,15 @@
 [package]
 name = "lila-websocket"
 version = "0.1.0"
+description = "Websocket frontend server for lichess.org"
+keywords = ["lichess", "websocket"]
+categories = ["games"]
+license = "AGPL-3.0+"
+repository = "https://github.com/niklasf/lila-websocket.git"
+readme = "README.md"
 authors = ["Niklas Fiekas <niklas.fiekas@backscattering.de>"]
 edition = "2018"
+publish = false
 
 [dependencies]
 cookie = "0.12"

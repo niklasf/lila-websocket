@@ -149,12 +149,11 @@ enum Flag {
     Tournament = 1,
 }
 
-
 /// Token for the timeout that's used to close Websockets after some time
 /// of inactivity.
 const IDLE_TIMEOUT: Token = Token(1);
 
-/// State of this Websocket server.
+/// Shared state of this Websocket server.
 struct App {
     by_user: RwLock<HashMap::<String, Vec<Sender>>>,
     by_game: RwLock<HashMap::<String, Vec<Sender>>>,
@@ -547,8 +546,6 @@ fn main() {
 
         app.broadcaster.set(server.broadcaster()).expect("set broadcaster");
 
-        server
-            .listen(&opt.bind)
-            .expect("ws listen");
+        server.listen(&opt.bind).expect("ws listen");
     }).expect("scope");
 }
