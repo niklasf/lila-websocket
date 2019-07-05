@@ -17,7 +17,8 @@ use structopt::StructOpt;
 
 use std::collections::{HashMap, HashSet};
 use std::str;
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::cmp::max;
+use std::sync::atomic::{AtomicI32, Ordering};
 use once_cell::sync::OnceCell;
 use parking_lot::RwLock;
 
@@ -132,7 +133,7 @@ struct App {
     redis_sink: crossbeam::channel::Sender<LilaIn>,
     session_store: mongodb::coll::Collection,
     broadcaster: OnceCell<Sender>,
-    connection_count: AtomicU32,
+    connection_count: AtomicI32, // signed to allow relaxed writes with underflow
 }
 
 impl App {
@@ -143,7 +144,7 @@ impl App {
             redis_sink,
             session_store,
             broadcaster: OnceCell::new(),
-            connection_count: AtomicU32::new(0),
+            connection_count: AtomicI32::new(0),
             watching_mlat: RwLock::new(HashSet::new()),
         }
     }
@@ -201,7 +202,7 @@ impl App {
             LilaOut::MoveLatency { value } => {
                 // Respond with our stats (connection count).
                 self.publish(LilaIn::Count {
-                    value: self.connection_count.load(Ordering::Relaxed)
+                    value: max(0, self.connection_count.load(Ordering::Relaxed)) as u32
                 });
 
                 // Update watching clients.
@@ -228,9 +229,8 @@ struct Socket {
 
 impl Handler for Socket {
     fn on_open(&mut self, handshake: Handshake) -> ws::Result<()> {
-        // Update connection count. Corresponding decrement must be ordered
-        // after this, to avoid underflow.
-        self.app.connection_count.fetch_add(1, Ordering::SeqCst);
+        // Update connection count.
+        self.app.connection_count.fetch_add(1, Ordering::Relaxed);
 
         // Ask mongodb for user id based on session cookie.
         self.uid = handshake.request.header("cookie")
@@ -282,8 +282,9 @@ impl Handler for Socket {
     }
 
     fn on_close(&mut self, _: CloseCode, _: &str) {
-        // Update connection count.
-        self.app.connection_count.fetch_sub(1, Ordering::SeqCst);
+        // Update connection count. (Due to relaxed ordering this can
+        // temporarily be less than 0).
+        self.app.connection_count.fetch_sub(1, Ordering::Relaxed);
 
         // Clear timeout.
         if let Some(timeout) = self.idle_timeout.take() {
