@@ -21,6 +21,7 @@ use std::cmp::max;
 use std::sync::atomic::{AtomicI32, AtomicU32, Ordering};
 use once_cell::sync::OnceCell;
 use parking_lot::RwLock;
+use lru::LruCache;
 use crossbeam::channel;
 
 #[derive(StructOpt, Clone)]
@@ -136,6 +137,7 @@ const IDLE_TIMEOUT: Token = Token(1);
 struct App {
     by_user: RwLock<HashMap::<String, Vec<Sender>>>,
     by_game: RwLock<HashMap::<String, Vec<Sender>>>,
+    watched_games: RwLock<LruCache<String, WatchedGame>>,
     mlat: AtomicU32,
     watching_mlat: RwLock<HashSet<Sender>>,
     redis_sink: channel::Sender<LilaIn>,
@@ -144,11 +146,17 @@ struct App {
     connection_count: AtomicI32, // signed to allow relaxed writes with underflow
 }
 
+struct WatchedGame {
+    fen: String,
+    lm: String,
+}
+
 impl App {
     fn new(redis_sink: channel::Sender<LilaIn>, session_store: mongodb::coll::Collection) -> App {
         App {
             by_user: RwLock::new(HashMap::new()),
             by_game: RwLock::new(HashMap::new()),
+            watched_games: RwLock::new(LruCache::new(5_000)),
             redis_sink,
             session_store,
             broadcaster: OnceCell::new(),
@@ -193,6 +201,11 @@ impl App {
                 }
             }
             LilaOut::Move { ref game_id, ref fen, ref m } => {
+                self.watched_games.write().put(game_id.to_owned(), WatchedGame {
+                    fen: fen.to_owned(),
+                    lm: m.to_owned()
+                });
+
                 let by_game = self.by_game.read();
                 if let Some(entry) = by_game.get(game_id) {
                     let msg = Message::text(SocketIn::Fen {
@@ -354,6 +367,14 @@ impl Handler for Socket {
             }
             Ok(SocketOut::StartWatching { d }) => {
                 if self.watching.insert(d.clone()) {
+                    if let Some(state) = self.app.watched_games.read().peek(&d) {
+                        self.sender.send(SocketIn::Fen {
+                            id: &d,
+                            fen: &state.fen,
+                            lm: &state.lm,
+                        }.to_json_string())?;
+                    }
+
                     self.app.by_game.write()
                         .entry(d.clone())
                         .and_modify(|v| v.push(self.sender.clone()))
