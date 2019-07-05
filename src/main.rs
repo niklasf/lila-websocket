@@ -103,7 +103,7 @@ enum SocketIn<'a> {
 
 impl<'a> SocketIn<'a> {
     fn to_json_string(&self) -> String {
-        serde_json::to_string(self).expect("serialize")
+        serde_json::to_string(self).expect("serialize for socket")
     }
 }
 
@@ -187,7 +187,7 @@ impl App {
                 }
             }
             LilaOut::TellAll { payload } => {
-                let msg = serde_json::to_string(&payload).expect("serialize for broadcast");
+                let msg = Message::text(payload.to_string());
                 if let Err(err) = self.broadcaster.get().expect("broadcaster").send(msg) {
                     log::warn!("failed to send broadcast: {:?}", err);
                 }
@@ -195,11 +195,11 @@ impl App {
             LilaOut::Move { ref game_id, ref fen, ref m } => {
                 let by_game = self.by_game.read();
                 if let Some(entry) = by_game.get(game_id) {
-                    let msg = Message::text(serde_json::to_string(&SocketIn::Fen {
+                    let msg = Message::text(SocketIn::Fen {
                         id: game_id,
                         fen,
                         lm: m,
-                    }).expect("serialize fen"));
+                    }.to_json_string());
 
                     for sender in entry {
                         if let Err(err) = sender.send(msg.clone()) {
@@ -218,7 +218,7 @@ impl App {
                 self.mlat.store(value, Ordering::Relaxed);
 
                 // Update watching clients.
-                let msg = serde_json::to_string(&SocketIn::MoveLatency { d: value }).expect("serialize mlat");
+                let msg = SocketIn::MoveLatency { d: value }.to_json_string();
                 let watching_mlat = self.watching_mlat.read();
                 for sender in watching_mlat.iter() {
                     if let Err(err) = sender.send(msg.clone()) {
