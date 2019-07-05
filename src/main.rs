@@ -99,7 +99,7 @@ enum SocketIn<'a> {
         lm: &'a str,
     },
     #[serde(rename = "mlat")]
-    MoveLatency { d: u32 },
+    MoveLatency(u32),
 }
 
 impl<'a> SocketIn<'a> {
@@ -231,7 +231,7 @@ impl App {
                 self.mlat.store(value, Ordering::Relaxed);
 
                 // Update watching clients.
-                let msg = SocketIn::MoveLatency { d: value }.to_json_string();
+                let msg = SocketIn::MoveLatency(value).to_json_string();
                 let watching_mlat = self.watching_mlat.read();
                 for sender in watching_mlat.iter() {
                     if let Err(err) = sender.send(msg.clone()) {
@@ -390,9 +390,9 @@ impl Handler for Socket {
                 let mut watching_mlat = self.app.watching_mlat.write();
                 if d {
                     if watching_mlat.insert(self.sender.clone()) {
-                        self.sender.send(SocketIn::MoveLatency { d:
+                        self.sender.send(SocketIn::MoveLatency(
                             self.app.mlat.load(Ordering::Relaxed)
-                        }.to_json_string())?;
+                        ).to_json_string())?;
                     }
                 } else {
                     watching_mlat.remove(&self.sender);
