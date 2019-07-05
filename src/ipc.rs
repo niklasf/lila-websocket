@@ -1,4 +1,6 @@
-use crate::model::{Flag, GameId};
+use std::fmt;
+
+use crate::model::{Flag, GameId, UserId, InvalidUserId};
 
 #[derive(Debug)]
 pub struct IpcError;
@@ -12,7 +14,7 @@ pub enum LilaOut<'a> {
         fen: &'a str,
     },
     Tell {
-        users: Vec<&'a str>,
+        users: Vec<UserId>,
         payload: &'a str,
     },
     TellAll {
@@ -39,8 +41,9 @@ impl<'a> LilaOut<'a> {
             },
             (Some("tell"), Some(args)) => {
                 let mut args = args.splitn(2, ' ');
+                let maybe_users: Result<Vec<_>, InvalidUserId> = args.next().ok_or(IpcError)?.split(',').map(|u| UserId::new(u)).collect();
                 LilaOut::Tell {
-                    users: args.next().ok_or(IpcError)?.split(',').collect(),
+                    users: maybe_users.map_err(|_| IpcError)?,
                     payload: args.next().ok_or(IpcError)?,
                 }
             },
@@ -66,7 +69,24 @@ impl<'a> LilaOut<'a> {
     }
 }
 
-/* /// Messages we send to lila.
+/// Messages we send to lila.
 #[derive(Debug)]
-enum LilaIn {
-} */
+pub enum LilaIn<'a> {
+    Connect(&'a UserId),
+    Disconnect(&'a UserId),
+    Notified(&'a UserId),
+    Watch(&'a GameId),
+    Connections(u32),
+}
+
+impl<'a> fmt::Display for LilaIn<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            LilaIn::Connect(uid) => write!(f, "connect {}", uid),
+            LilaIn::Disconnect(uid) => write!(f, "disconnect {}", uid),
+            LilaIn::Notified(uid) => write!(f, "notified {}", uid),
+            LilaIn::Watch(game) => write!(f, "game {}", game),
+            LilaIn::Connections(n) => write!(f, "connections {}", n),
+        }
+    }
+}

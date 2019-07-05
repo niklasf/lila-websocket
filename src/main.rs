@@ -26,8 +26,8 @@ use crossbeam::channel;
 mod model;
 mod ipc;
 
-use crate::model::{Flag, GameId};
-use crate::ipc::LilaOut;
+use crate::model::{Flag, GameId, UserId};
+use crate::ipc::{LilaOut, LilaIn};
 
 #[derive(StructOpt, Clone)]
 struct Opt {
@@ -43,22 +43,6 @@ struct Opt {
     /// Hard limit for maximum number of simultaneous Websocket connections
     #[structopt(default_value = "40000")]
     max_connections: usize,
-}
-
-/// Messages we send to lila.
-#[derive(Serialize)]
-#[serde(tag = "path")]
-enum LilaIn {
-    #[serde(rename = "connect")]
-    Connect { user: String },
-    #[serde(rename = "disconnect")]
-    Disconnect { user: String },
-    #[serde(rename = "notified")]
-    Notified { user: String },
-    #[serde(rename = "watch")]
-    Watch { game: GameId },
-    #[serde(rename = "count")]
-    Count { value: u32 },
 }
 
 /// Messages we send to Websocket clients.
@@ -114,13 +98,13 @@ const IDLE_TIMEOUT: Token = Token(1);
 
 /// Shared state of this Websocket server.
 struct App {
-    by_user: RwLock<HashMap::<String, Vec<Sender>>>,
+    by_user: RwLock<HashMap::<UserId, Vec<Sender>>>,
     by_game: RwLock<HashMap::<GameId, Vec<Sender>>>,
     watched_games: RwLock<LruCache<GameId, WatchedGame>>,
     flags: [RwLock<HashSet<Sender>>; 2],
     mlat: AtomicU32,
     watching_mlat: RwLock<HashSet<Sender>>,
-    redis_sink: channel::Sender<LilaIn>,
+    redis_sink: channel::Sender<String>,
     session_store: mongodb::coll::Collection,
     broadcaster: OnceCell<Sender>,
     connection_count: AtomicI32, // signed to allow relaxed writes with underflow
@@ -132,7 +116,7 @@ struct WatchedGame {
 }
 
 impl App {
-    fn new(redis_sink: channel::Sender<LilaIn>, session_store: mongodb::coll::Collection) -> App {
+    fn new(redis_sink: channel::Sender<String>, session_store: mongodb::coll::Collection) -> App {
         App {
             by_user: RwLock::new(HashMap::new()),
             by_game: RwLock::new(HashMap::new()),
@@ -147,8 +131,8 @@ impl App {
         }
     }
 
-    fn publish(&self, msg: LilaIn) {
-        self.redis_sink.send(msg).expect("redis sink");
+    fn publish<'a>(&self, msg: LilaIn<'a>) {
+        self.redis_sink.send(msg.to_string()).expect("redis sink");
     }
 
     fn received(&self, msg: LilaOut) {
@@ -156,7 +140,7 @@ impl App {
             LilaOut::Tell { users, payload } => {
                 let by_user = self.by_user.read();
                 for user in users {
-                    if let Some(entry) = by_user.get(user) {
+                    if let Some(entry) = by_user.get(&user) {
                         for sender in entry {
                             if let Err(err) = sender.send(Message::text(payload.to_string())) {
                                 log::warn!("failed to tell ({}): {:?}", user, err);
@@ -194,9 +178,9 @@ impl App {
             }
             LilaOut::MoveLatency(mlat) => {
                 // Respond with our stats (connection count).
-                self.publish(LilaIn::Count {
-                    value: max(0, self.connection_count.load(Ordering::Relaxed)) as u32
-                });
+                self.publish(LilaIn::Connections(
+                    max(0, self.connection_count.load(Ordering::Relaxed)) as u32
+                ));
 
                 // Update stats.
                 self.mlat.store(mlat, Ordering::Relaxed);
@@ -226,7 +210,7 @@ impl App {
 struct Socket {
     app: &'static App,
     sender: Sender,
-    uid: Option<String>,
+    uid: Option<UserId>,
     watching: HashSet<GameId>,
     flag: Option<Flag>,
     idle_timeout: Option<Timeout>,
@@ -267,7 +251,8 @@ impl Handler for Socket {
                         None
                     }
                 }
-            });
+            })
+            .and_then(|u| UserId::new(&u).ok());
 
         // Subscribe to flag.
         let path = handshake.request.resource();
@@ -290,7 +275,7 @@ impl Handler for Socket {
                 .and_modify(|v| v.push(self.sender.clone()))
                 .or_insert_with(|| {
                     log::debug!("first open: {}", uid);
-                    self.app.publish(LilaIn::Connect { user: uid.to_owned() });
+                    self.app.publish(LilaIn::Connect(uid));
                     vec![self.sender.clone()]
                 });
         }
@@ -322,7 +307,7 @@ impl Handler for Socket {
             if entry.is_empty() {
                 by_user.remove(&uid);
                 log::debug!("last close: {}", uid);
-                self.app.publish(LilaIn::Disconnect { user: uid });
+                self.app.publish(LilaIn::Disconnect(&uid));
             }
         }
 
@@ -360,7 +345,7 @@ impl Handler for Socket {
             Ok(SocketOut::Notified) => {
                 if let Some(ref uid) = self.uid {
                     log::debug!("notified: {}", uid);
-                    self.app.publish(LilaIn::Notified { user: uid.to_owned() });
+                    self.app.publish(LilaIn::Notified(uid));
                 }
                 Ok(())
             }
@@ -379,7 +364,7 @@ impl Handler for Socket {
                         .and_modify(|v| v.push(self.sender.clone()))
                         .or_insert_with(|| {
                             log::debug!("start watching: {:?}", d);
-                            self.app.publish(LilaIn::Watch { game: d });
+                            self.app.publish(LilaIn::Watch(&d));
                             vec![self.sender.clone()]
                         });
                 }
@@ -444,8 +429,7 @@ fn main() {
                 .expect("redis connection for publish");
 
             loop {
-                let msg = redis_recv.recv().expect("redis recv");
-                let msg = serde_json::to_string(&msg).expect("serialize site-in");
+                let msg: String = redis_recv.recv().expect("redis recv");
                 log::trace!("site-in: {}", msg);
                 let ret: u32 = redis.publish("site-in", msg).expect("publish site-in");
                 if ret == 0 {
