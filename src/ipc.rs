@@ -41,7 +41,7 @@ impl<'a> LilaOut<'a> {
                     fen: args.next().ok_or(IpcError)?,
                 }
             },
-            (Some("tell/users"), Some(args)) => {
+            (Some("tell/user", "tell/users"), Some(args)) => {
                 let mut args = args.splitn(2, ' ');
                 let maybe_users: Result<_, InvalidUserId> = args.next().ok_or(IpcError)?.split(',').map(|u| UserId::new(u)).collect();
                 LilaOut::TellUsers {
