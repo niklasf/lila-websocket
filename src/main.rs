@@ -13,11 +13,29 @@ use ws::{Handshake, Handler, Sender, Message, CloseCode};
 use ws::util::Token;
 use mio_extras::timer::Timeout;
 
+use structopt::StructOpt;
+
 use std::collections::{HashMap, HashSet};
 use std::str;
 use std::sync::RwLock;
 use std::sync::atomic::{AtomicU32, Ordering};
 use once_cell::sync::OnceCell;
+
+#[derive(StructOpt, Clone)]
+struct Opt {
+    /// Binding address of Websocket server
+    #[structopt(default_value = "127.0.0.1:9664")]
+    bind: String,
+    /// URI of redis server
+    #[structopt(default_value = "redis://127.0.0.1/")]
+    redis: String,
+    /// URI of mongodb with security collection
+    #[structopt(default_value = "mongodb://127.0.0.1/")]
+    mongodb: String,
+    /// Hard limit for maximum number of simultaneous Websocket connections
+    #[structopt(default_value = "40_000")]
+    max_connections: usize,
+}
 
 /// Messages we send to lila.
 #[derive(Serialize)]
@@ -363,7 +381,9 @@ fn main() {
     env_logger::init();
 
     crossbeam::scope(|s| {
-        let session_store = mongodb::Client::connect("127.0.0.1", 27017)
+        let opt = Opt::from_args();
+
+        let session_store = mongodb::Client::with_uri(&opt.mongodb)
             .expect("mongodb connect")
             .db("lichess")
             .collection("security");
@@ -372,8 +392,9 @@ fn main() {
         let app: &'static App = Box::leak(Box::new(App::new(redis_sink, session_store)));
 
         // Thread for outgoing messages to lila.
+        let opt_inner = opt.clone();
         s.spawn(move |_| {
-            let redis = redis::Client::open("redis://127.0.0.1/")
+            let redis = redis::Client::open(opt_inner.redis.as_str())
                 .expect("redis open for publish")
                 .get_connection()
                 .expect("redis connection for publish");
@@ -390,8 +411,9 @@ fn main() {
         });
 
         // Thread for incoming messages from lila.
+        let opt_inner = opt.clone();
         s.spawn(move |_| {
-            let mut redis = redis::Client::open("redis://127.0.0.1/")
+            let mut redis = redis::Client::open(opt_inner.redis.as_str())
                 .expect("redis open for subscribe")
                 .get_connection()
                 .expect("redis connection for subscribe");
@@ -408,8 +430,9 @@ fn main() {
             }
         });
 
+        // Start websocket server.
         let mut settings = ws::Settings::default();
-        settings.max_connections = 40_000;
+        settings.max_connections = opt.max_connections;
         settings.tcp_nodelay = true;
 
         let server = ws::Builder::new()
@@ -428,7 +451,7 @@ fn main() {
         app.broadcaster.set(server.broadcaster()).expect("set broadcaster");
 
         server
-            .listen("127.0.0.1:9664")
+            .listen(&opt.bind)
             .expect("ws listen");
     }).expect("scope");
 }
