@@ -1,5 +1,7 @@
 use std::fmt;
 
+use smallvec::SmallVec;
+
 use crate::model::{Flag, GameId, UserId, InvalidUserId};
 
 #[derive(Debug)]
@@ -14,7 +16,7 @@ pub enum LilaOut<'a> {
         fen: &'a str,
     },
     Tell {
-        users: Vec<UserId>,
+        users: SmallVec<[UserId; 1]>,
         payload: &'a str,
     },
     TellAll {
@@ -41,7 +43,7 @@ impl<'a> LilaOut<'a> {
             },
             (Some("tell"), Some(args)) => {
                 let mut args = args.splitn(2, ' ');
-                let maybe_users: Result<Vec<_>, InvalidUserId> = args.next().ok_or(IpcError)?.split(',').map(|u| UserId::new(u)).collect();
+                let maybe_users: Result<_, InvalidUserId> = args.next().ok_or(IpcError)?.split(',').map(|u| UserId::new(u)).collect();
                 LilaOut::Tell {
                     users: maybe_users.map_err(|_| IpcError)?,
                     payload: args.next().ok_or(IpcError)?,
