@@ -490,6 +490,7 @@ dependencies = [
  "mio-extras 2.0.5 (registry+https://github.com/rust-lang/crates.io-index)",
  "mongodb 0.3.12 (registry+https://github.com/rust-lang/crates.io-index)",
  "once_cell 0.2.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "parking_lot 0.8.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "redis 0.10.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "serde 1.0.94 (registry+https://github.com/rust-lang/crates.io-index)",
  "serde_json 1.0.40 (registry+https://github.com/rust-lang/crates.io-index)",

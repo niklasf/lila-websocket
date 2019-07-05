@@ -17,9 +17,9 @@ use structopt::StructOpt;
 
 use std::collections::{HashMap, HashSet};
 use std::str;
-use std::sync::RwLock;
 use std::sync::atomic::{AtomicU32, Ordering};
 use once_cell::sync::OnceCell;
+use parking_lot::RwLock;
 
 #[derive(StructOpt, Clone)]
 struct Opt {
@@ -155,7 +155,7 @@ impl App {
     fn received(&self, msg: LilaOut) {
         match msg {
             LilaOut::Tell { user, payload } => {
-                let by_user = self.by_user.read().expect("by_user for tell");
+                let by_user = self.by_user.read();
                 if let Some(entry) = by_user.get(&user) {
                     for sender in entry {
                         if let Err(err) = sender.send(Message::text(payload.to_string())) {
@@ -165,7 +165,7 @@ impl App {
                 }
             }
             LilaOut::TellMany { users, payload } => {
-                let by_user = self.by_user.read().expect("by_user for tell many");
+                let by_user = self.by_user.read();
                 for user in &users {
                     if let Some(entry) = by_user.get(user) {
                         for sender in entry {
@@ -183,7 +183,7 @@ impl App {
                 }
             }
             LilaOut::Move { ref game_id, ref fen, ref m } => {
-                let by_game = self.by_game.read().expect("by_game for move");
+                let by_game = self.by_game.read();
                 if let Some(entry) = by_game.get(game_id) {
                     let msg = Message::text(serde_json::to_string(&SocketIn::Fen {
                         id: game_id,
@@ -206,7 +206,7 @@ impl App {
 
                 // Update watching clients.
                 let msg = serde_json::to_string(&SocketIn::MoveLatency { d: value }).expect("serialize mlat");
-                let watching_mlat = self.watching_mlat.read().expect("read watching_mlat");
+                let watching_mlat = self.watching_mlat.read();
                 for sender in watching_mlat.iter() {
                     if let Err(err) = sender.send(msg.clone()) {
                         log::warn!("failed to send mlat: {:?}", err);
@@ -266,7 +266,7 @@ impl Handler for Socket {
 
         // Add socket to by_user map.
         if let Some(ref uid) = self.uid {
-            let mut by_user = self.app.by_user.write().expect("lock by_user for open");
+            let mut by_user = self.app.by_user.write();
             by_user
                 .entry(uid.to_owned())
                 .and_modify(|v| v.push(self.sender.clone()))
@@ -294,7 +294,7 @@ impl Handler for Socket {
 
         // Update by_user.
         if let Some(uid) = self.uid.take() {
-            let mut by_user = self.app.by_user.write().expect("lock by_user for close");
+            let mut by_user = self.app.by_user.write();
             let entry = by_user.get_mut(&uid).expect("uid in map");
             let idx = entry.iter().position(|s| s.token() == self.sender.token()).expect("uid in by_user");
             entry.swap_remove(idx);
@@ -308,7 +308,7 @@ impl Handler for Socket {
         }
 
         // Update by_game.
-        let mut by_game = self.app.by_game.write().expect("lock by_game for close");
+        let mut by_game = self.app.by_game.write();
         let our_token = self.sender.token();
         for game in self.watching.drain() {
             let watchers = by_game.get_mut(&game).expect("game in map");
@@ -346,7 +346,7 @@ impl Handler for Socket {
                 Ok(())
             },
             Ok(SocketOut::MoveLatency { d }) => {
-                let mut watching_mlat = self.app.watching_mlat.write().expect("write watching_mlat");
+                let mut watching_mlat = self.app.watching_mlat.write();
                 if d {
                     watching_mlat.insert(self.sender.clone());
                 } else {
