@@ -267,8 +267,7 @@ impl Handler for Socket {
 
         // Add socket to by_user map.
         if let Some(ref uid) = self.uid {
-            let mut by_user = self.app.by_user.write();
-            by_user
+            self.app.by_user.write()
                 .entry(uid.to_owned())
                 .and_modify(|v| v.push(self.sender.clone()))
                 .or_insert_with(|| {
@@ -343,8 +342,16 @@ impl Handler for Socket {
                 Ok(())
             }
             Ok(SocketOut::StartWatching { d }) => {
-                log::debug!("start watching: {}", d);
-                self.app.publish(LilaIn::Watch { game: d });
+                if self.watching.insert(d.clone()) {
+                    self.app.by_game.write()
+                        .entry(d.clone())
+                        .and_modify(|v| v.push(self.sender.clone()))
+                        .or_insert_with(|| {
+                            log::debug!("start watching: {}", d);
+                            self.app.publish(LilaIn::Watch { game: d });
+                            vec![self.sender.clone()]
+                        });
+                }
                 Ok(())
             },
             Ok(SocketOut::MoveLatency { d }) => {
