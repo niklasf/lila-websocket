@@ -24,6 +24,11 @@ use parking_lot::RwLock;
 use lru::LruCache;
 use crossbeam::channel;
 
+mod model;
+mod ipc;
+
+use crate::model::Flag;
+
 #[derive(StructOpt, Clone)]
 struct Opt {
     /// Binding address of Websocket server
@@ -138,15 +143,6 @@ struct SessionCookie {
 #[derive(Deserialize, Debug)]
 struct QueryString {
     flag: Option<Flag>,
-}
-
-/// Channels for server sent updates.
-#[derive(Deserialize, Debug, Copy, Clone)]
-enum Flag {
-    #[serde(rename = "simul")]
-    Simul = 0,
-    #[serde(rename = "tournament")]
-    Tournament = 1,
 }
 
 /// Token for the timeout that's used to close Websockets after some time
