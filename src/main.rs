@@ -36,7 +36,7 @@ struct Opt {
     #[structopt(default_value = "mongodb://127.0.0.1/")]
     mongodb: String,
     /// Hard limit for maximum number of simultaneous Websocket connections
-    #[structopt(default_value = "40_000")]
+    #[structopt(default_value = "40000")]
     max_connections: usize,
 }
 
