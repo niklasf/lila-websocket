@@ -21,6 +21,7 @@ use std::cmp::max;
 use std::sync::atomic::{AtomicI32, Ordering};
 use once_cell::sync::OnceCell;
 use parking_lot::RwLock;
+use crossbeam::channel;
 
 #[derive(StructOpt, Clone)]
 struct Opt {
@@ -121,7 +122,7 @@ struct SessionCookie {
     session_id: String,
 }
 
-/// Token for the timeout that's used to closed Websockets after some time
+/// Token for the timeout that's used to close Websockets after some time
 /// of inactivity.
 const IDLE_TIMEOUT: Token = Token(1);
 
@@ -130,14 +131,14 @@ struct App {
     by_user: RwLock<HashMap::<String, Vec<Sender>>>,
     by_game: RwLock<HashMap::<String, Vec<Sender>>>,
     watching_mlat: RwLock<HashSet<Sender>>,
-    redis_sink: crossbeam::channel::Sender<LilaIn>,
+    redis_sink: channel::Sender<LilaIn>,
     session_store: mongodb::coll::Collection,
     broadcaster: OnceCell<Sender>,
     connection_count: AtomicI32, // signed to allow relaxed writes with underflow
 }
 
 impl App {
-    fn new(redis_sink: crossbeam::channel::Sender<LilaIn>, session_store: mongodb::coll::Collection) -> App {
+    fn new(redis_sink: channel::Sender<LilaIn>, session_store: mongodb::coll::Collection) -> App {
         App {
             by_user: RwLock::new(HashMap::new()),
             by_game: RwLock::new(HashMap::new()),
@@ -389,7 +390,7 @@ fn main() {
             .db("lichess")
             .collection("security");
 
-        let (redis_sink, redis_recv) = crossbeam::channel::unbounded();
+        let (redis_sink, redis_recv) = channel::unbounded();
         let app: &'static App = Box::leak(Box::new(App::new(redis_sink, session_store)));
 
         // Thread for outgoing messages to lila.
