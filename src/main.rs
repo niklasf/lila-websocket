@@ -86,6 +86,11 @@ enum LilaOut {
     MoveLatency {
         value: u32,
     },
+    #[serde(rename = "flag")]
+    Flag {
+        flag: Flag,
+        payload: JsonValue,
+    },
 }
 
 /// Messages we send to Websocket clients.
@@ -129,6 +134,22 @@ struct SessionCookie {
     session_id: String,
 }
 
+/// Query string of Websocket requests.
+#[derive(Deserialize, Debug)]
+struct QueryString {
+    flag: Option<Flag>,
+}
+
+/// Channels for server sent updates.
+#[derive(Deserialize, Debug, Copy, Clone)]
+enum Flag {
+    #[serde(rename = "simul")]
+    Simul = 0,
+    #[serde(rename = "tournament")]
+    Tournament = 1,
+}
+
+
 /// Token for the timeout that's used to close Websockets after some time
 /// of inactivity.
 const IDLE_TIMEOUT: Token = Token(1);
@@ -138,6 +159,7 @@ struct App {
     by_user: RwLock<HashMap::<String, Vec<Sender>>>,
     by_game: RwLock<HashMap::<String, Vec<Sender>>>,
     watched_games: RwLock<LruCache<String, WatchedGame>>,
+    flags: [RwLock<HashSet<Sender>>; 2],
     mlat: AtomicU32,
     watching_mlat: RwLock<HashSet<Sender>>,
     redis_sink: channel::Sender<LilaIn>,
@@ -157,6 +179,7 @@ impl App {
             by_user: RwLock::new(HashMap::new()),
             by_game: RwLock::new(HashMap::new()),
             watched_games: RwLock::new(LruCache::new(5_000)),
+            flags: [RwLock::new(HashSet::new()), RwLock::new(HashSet::new())],
             redis_sink,
             session_store,
             broadcaster: OnceCell::new(),
@@ -232,10 +255,18 @@ impl App {
 
                 // Update watching clients.
                 let msg = SocketIn::MoveLatency(value).to_json_string();
-                let watching_mlat = self.watching_mlat.read();
-                for sender in watching_mlat.iter() {
+                for sender in self.watching_mlat.read().iter() {
                     if let Err(err) = sender.send(msg.clone()) {
                         log::warn!("failed to send mlat: {:?}", err);
+                    }
+                }
+            }
+            LilaOut::Flag { flag, payload } => {
+                let watching_flag = self.flags[flag as usize].read();
+                let msg = payload.to_string();
+                for sender in watching_flag.iter() {
+                    if let Err(err) = sender.send(msg.clone()) {
+                        log::warn!("failed to send to flag {:?}: {:?}", flag, err);
                     }
                 }
             }
@@ -249,6 +280,7 @@ struct Socket {
     sender: Sender,
     uid: Option<String>,
     watching: HashSet<String>,
+    flag: Option<Flag>,
     idle_timeout: Option<Timeout>,
 }
 
@@ -288,6 +320,20 @@ impl Handler for Socket {
                     }
                 }
             });
+
+        // Subscribe to flag.
+        let path = handshake.request.resource();
+        if let Some(qs_idx) = path.find('?') {
+            let qs = &path[qs_idx..];
+            match serde_urlencoded::from_str::<QueryString>(qs) {
+                Ok(QueryString { flag: Some(flag) }) => {
+                    self.app.flags[flag as usize].write().insert(self.sender.clone());
+                    self.flag = Some(flag);
+                },
+                Ok(_) => (),
+                Err(err) => log::warn!("invalid query string: {:?}", err),
+            }
+        }
 
         // Add socket to by_user map.
         if let Some(ref uid) = self.uid {
@@ -342,6 +388,11 @@ impl Handler for Socket {
             if watchers.is_empty() {
                 by_game.remove(&game);
             }
+        }
+
+        // Unsubscribe from flag.
+        if let Some(flag) = self.flag.take() {
+            self.app.flags[flag as usize].write().remove(&self.sender);
         }
     }
 
@@ -487,6 +538,7 @@ fn main() {
                     app,
                     sender,
                     uid: None,
+                    flag: None,
                     watching: HashSet::new(),
                     idle_timeout: None
                 }
