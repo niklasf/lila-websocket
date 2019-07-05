@@ -297,8 +297,8 @@ impl Handler for Socket {
         // Update by_user.
         if let Some(uid) = self.uid.take() {
             let mut by_user = self.app.by_user.write();
-            let entry = by_user.get_mut(&uid).expect("uid in map");
-            let idx = entry.iter().position(|s| s.token() == self.sender.token()).expect("uid in by_user");
+            let entry = by_user.get_mut(&uid).expect("uid in by_user");
+            let idx = entry.iter().position(|s| s.token() == self.sender.token()).expect("sender in by_user entry");
             entry.swap_remove(idx);
 
             // Last remaining connection closed.
@@ -313,7 +313,7 @@ impl Handler for Socket {
         let mut by_game = self.app.by_game.write();
         let our_token = self.sender.token();
         for game in self.watching.drain() {
-            let watchers = by_game.get_mut(&game).expect("game in map");
+            let watchers = by_game.get_mut(&game).expect("game in by_game");
             let idx = watchers.iter().position(|s| s.token() == our_token).expect("sender in watchers");
             watchers.swap_remove(idx);
             if watchers.is_empty() {
@@ -403,7 +403,7 @@ fn main() {
 
             loop {
                 let msg = redis_recv.recv().expect("redis recv");
-                let msg = serde_json::to_string(&msg).expect("serialize");
+                let msg = serde_json::to_string(&msg).expect("serialize site-in");
                 log::debug!("site-in: {}", msg);
                 let ret: u32 = redis.publish("site-in", msg).expect("publish site-in");
                 if ret == 0 {
@@ -427,7 +427,7 @@ fn main() {
                 let redis_msg = incoming.get_message().expect("get message");
                 let payload: String = redis_msg.get_payload().expect("get payload");
                 log::debug!("site-out: {}", payload);
-                let msg: LilaOut = serde_json::from_str(&payload).expect("lila out");
+                let msg: LilaOut = serde_json::from_str(&payload).expect("deserialize site-out");
                 app.received(msg);
             }
         });
