@@ -15,7 +15,7 @@ pub enum LilaOut<'a> {
         last_uci: &'a str,
         fen: &'a str,
     },
-    Tell {
+    TellUsers {
         users: SmallVec<[UserId; 1]>,
         payload: &'a str,
     },
@@ -41,10 +41,10 @@ impl<'a> LilaOut<'a> {
                     fen: args.next().ok_or(IpcError)?,
                 }
             },
-            (Some("tell"), Some(args)) => {
+            (Some("tell/users"), Some(args)) => {
                 let mut args = args.splitn(2, ' ');
                 let maybe_users: Result<_, InvalidUserId> = args.next().ok_or(IpcError)?.split(',').map(|u| UserId::new(u)).collect();
-                LilaOut::Tell {
+                LilaOut::TellUsers {
                     users: maybe_users.map_err(|_| IpcError)?,
                     payload: args.next().ok_or(IpcError)?,
                 }

@@ -137,7 +137,7 @@ impl App {
 
     fn received(&self, msg: LilaOut) {
         match msg {
-            LilaOut::Tell { users, payload } => {
+            LilaOut::TellUsers { users, payload } => {
                 let by_user = self.by_user.read();
                 for user in users {
                     if let Some(entry) = by_user.get(&user) {
