@@ -18,7 +18,7 @@ use structopt::StructOpt;
 use std::collections::{HashMap, HashSet};
 use std::str;
 use std::cmp::max;
-use std::sync::atomic::{AtomicI32, Ordering};
+use std::sync::atomic::{AtomicI32, AtomicU32, Ordering};
 use once_cell::sync::OnceCell;
 use parking_lot::RwLock;
 use crossbeam::channel;
@@ -101,6 +101,12 @@ enum SocketIn<'a> {
     MoveLatency { d: u32 },
 }
 
+impl<'a> SocketIn<'a> {
+    fn to_json_string(&self) -> String {
+        serde_json::to_string(self).expect("serialize")
+    }
+}
+
 /// Messages we receive from Websocket clients.
 #[derive(Deserialize)]
 #[serde(tag = "t")]
@@ -130,6 +136,7 @@ const IDLE_TIMEOUT: Token = Token(1);
 struct App {
     by_user: RwLock<HashMap::<String, Vec<Sender>>>,
     by_game: RwLock<HashMap::<String, Vec<Sender>>>,
+    mlat: AtomicU32,
     watching_mlat: RwLock<HashSet<Sender>>,
     redis_sink: channel::Sender<LilaIn>,
     session_store: mongodb::coll::Collection,
@@ -146,6 +153,7 @@ impl App {
             session_store,
             broadcaster: OnceCell::new(),
             connection_count: AtomicI32::new(0),
+            mlat: AtomicU32::new(u32::max_value()),
             watching_mlat: RwLock::new(HashSet::new()),
         }
     }
@@ -205,6 +213,9 @@ impl App {
                 self.publish(LilaIn::Count {
                     value: max(0, self.connection_count.load(Ordering::Relaxed)) as u32
                 });
+
+                // Update stats.
+                self.mlat.store(value, Ordering::Relaxed);
 
                 // Update watching clients.
                 let msg = serde_json::to_string(&SocketIn::MoveLatency { d: value }).expect("serialize mlat");
@@ -357,7 +368,11 @@ impl Handler for Socket {
             Ok(SocketOut::MoveLatency { d }) => {
                 let mut watching_mlat = self.app.watching_mlat.write();
                 if d {
-                    watching_mlat.insert(self.sender.clone());
+                    if watching_mlat.insert(self.sender.clone()) {
+                        self.sender.send(SocketIn::MoveLatency { d:
+                            self.app.mlat.load(Ordering::Relaxed)
+                        }.to_json_string())?;
+                    }
                 } else {
                     watching_mlat.remove(&self.sender);
                 }
