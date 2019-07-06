@@ -51,7 +51,7 @@ impl FromStr for GameId {
 
 /// Username, normalized to lowercase.
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
-pub struct UserId(unicase::Ascii<String>);
+pub struct UserId(String);
 
 #[derive(Debug)]
 pub struct InvalidUserId;
@@ -61,7 +61,7 @@ impl UserId {
         if !inner.is_empty() && inner.len() <= 30 &&
            inner.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
         {
-            Ok(UserId(inner.parse().map_err(|_| InvalidUserId)?))
+            Ok(UserId(inner.to_lowercase()))
         } else {
             Err(InvalidUserId)
         }
