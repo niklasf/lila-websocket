@@ -146,7 +146,7 @@ impl App {
                     if let Some(entry) = by_user.get(&user) {
                         for sender in entry {
                             if let Err(err) = sender.send(Message::text(payload.to_string())) {
-                                log::warn!("failed to tell ({}): {:?}", user, err);
+                                log::error!("failed to tell {}: {:?}", user, err);
                             }
                         }
                     }
@@ -155,7 +155,7 @@ impl App {
             LilaOut::TellAll { payload } => {
                 let msg = Message::text(payload.to_string());
                 if let Err(err) = self.broadcaster.get().expect("broadcaster").send(msg) {
-                    log::warn!("failed to broadcast: {:?}", err);
+                    log::error!("failed to broadcast: {:?}", err);
                 }
             }
             LilaOut::Move { game, fen, last_uci } => {
@@ -174,7 +174,7 @@ impl App {
 
                     for sender in entry {
                         if let Err(err) = sender.send(msg.clone()) {
-                            log::warn!("failed to send fen: {:?}", err);
+                            log::error!("failed to send fen: {:?}", err);
                         }
                     }
                 }
@@ -192,7 +192,7 @@ impl App {
                 let msg = SocketIn::MoveLatency(mlat).to_json_string();
                 for sender in self.watching_mlat.read().iter() {
                     if let Err(err) = sender.send(msg.clone()) {
-                        log::warn!("failed to send mlat: {:?}", err);
+                        log::error!("failed to send mlat: {:?}", err);
                     }
                 }
             }
@@ -201,7 +201,7 @@ impl App {
                 let msg = payload.to_string();
                 for sender in watching_flag.iter() {
                     if let Err(err) = sender.send(msg.clone()) {
-                        log::warn!("failed to send to flag ({:?}): {:?}", flag, err);
+                        log::error!("failed to send to flag ({:?}): {:?}", flag, err);
                     }
                 }
             }
@@ -240,13 +240,13 @@ impl Handler for Socket {
                 serde_urlencoded::from_str::<SessionCookie>(&s[idx..]).ok()
             })
             .and_then(|c| {
-                let query = doc! { "_id": c.session_id, "up": true, };
+                let query = doc! { "_id": &c.session_id, "up": true, };
                 let mut opts = FindOptions::new();
                 opts.projection = Some(doc! { "user": true });
                 match self.app.session_store.find_one(Some(query), Some(opts)) {
                     Ok(Some(doc)) => doc.get_str("user").map(|s| s.to_owned()).ok(),
                     Ok(None) => {
-                        log::info!("session store lookup with expired sid");
+                        log::info!("session store does not have sid: {}", c.session_id);
                         None
                     }
                     Err(err) => {
@@ -267,7 +267,7 @@ impl Handler for Socket {
                     self.flag = Some(flag);
                 },
                 Ok(_) => (),
-                Err(err) => log::warn!("invalid query string: {:?}", err),
+                Err(err) => log::warn!("invalid query string ({:?}): {}", err, qs),
             }
         }
 
@@ -344,10 +344,10 @@ impl Handler for Socket {
 
         // Limit message size.
         if msg.len() > 512 {
-            log::error!("very long message ({} bytes): {}", msg.len(), msg);
+            log::warn!("very long message ({} bytes): {}", msg.len(), msg);
             return self.sender.close(CloseCode::Size);
         } else if msg.len() > 256 {
-            log::warn!("long message ({} bytes): {}", msg.len(), msg);
+            log::info!("long message ({} bytes): {}", msg.len(), msg);
         }
 
         match serde_json::from_str(msg) {
@@ -415,7 +415,7 @@ impl Handler for Socket {
                 Ok(())
             },
             Err(err) => {
-                log::warn!("protocol violation of client: {:?}", err);
+                log::warn!("protocol violation of client ({:?}): {}", err, msg);
                 self.sender.close(CloseCode::Protocol)
             }
         }
