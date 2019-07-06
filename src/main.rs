@@ -70,7 +70,7 @@ impl<'a> SocketIn<'a> {
 #[serde(tag = "t")]
 enum SocketOut {
     #[serde(rename = "p")]
-    Ping { #[allow(unused)] l: u32 },
+    Ping { #[allow(unused)] l: Option<u32> },
     #[serde(rename = "notified")]
     Notified,
     #[serde(rename = "startWatching")]
