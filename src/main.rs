@@ -92,9 +92,9 @@ struct QueryString {
     flag: Option<Flag>,
 }
 
-/// Token for the timeout that's used to close Websockets after some time
-/// of inactivity.
-const IDLE_TIMEOUT: Token = Token(1);
+/// Timeout that's used to close Websockets after some time of inactivity.
+const IDLE_TIMEOUT_TOKEN: Token = Token(1);
+const IDLE_TIMEOUT_MS: u64 = 15_000;
 
 /// Shared state of this Websocket server.
 struct App {
@@ -281,7 +281,7 @@ impl Handler for Socket {
         }
 
         // Start idle timeout.
-        self.sender.timeout(10_000, IDLE_TIMEOUT)
+        self.sender.timeout(IDLE_TIMEOUT_MS, IDLE_TIMEOUT_TOKEN)
     }
 
     fn on_close(&mut self, _: CloseCode, _: &str) {
@@ -330,7 +330,7 @@ impl Handler for Socket {
     }
 
     fn on_message(&mut self, msg: Message) -> ws::Result<()> {
-        self.sender.timeout(10_000, IDLE_TIMEOUT)?;
+        self.sender.timeout(IDLE_TIMEOUT_MS, IDLE_TIMEOUT_TOKEN)?;
 
         let msg = msg.as_text()?;
         if msg == "null" {
@@ -391,7 +391,7 @@ impl Handler for Socket {
     }
 
     fn on_new_timeout(&mut self, event: Token, timeout: Timeout) -> ws::Result<()> {
-        assert_eq!(event, IDLE_TIMEOUT);
+        assert_eq!(event, IDLE_TIMEOUT_TOKEN);
         if let Some(old_timeout) = self.idle_timeout.take() {
             self.sender.cancel(old_timeout)?;
         }
@@ -400,7 +400,7 @@ impl Handler for Socket {
     }
 
     fn on_timeout(&mut self, event: Token) -> ws::Result<()> {
-        assert_eq!(event, IDLE_TIMEOUT);
+        assert_eq!(event, IDLE_TIMEOUT_TOKEN);
         log::info!("closing socket due to timeout");
         self.sender.close(CloseCode::Away)
     }
