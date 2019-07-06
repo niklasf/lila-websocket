@@ -320,6 +320,7 @@ impl Handler for Socket {
             watchers.swap_remove(idx);
             if watchers.is_empty() {
                 by_game.remove(&game);
+                log::debug!("no more watchers for {:?}", game);
             }
         }
 
@@ -370,7 +371,10 @@ impl Handler for Socket {
                                 // Subscribe to updates.
                                 self.app.by_game.write()
                                     .entry(game.clone())
-                                    .and_modify(|v| v.push(self.sender.clone()))
+                                    .and_modify(|v| {
+                                        v.push(self.sender.clone());
+                                        log::debug!("also watching {:?} ({} watchers)", game, v.len());
+                                    })
                                     .or_insert_with(|| {
                                         log::debug!("start watching: {:?}", game);
                                         self.app.publish(LilaIn::Watch(&game));
