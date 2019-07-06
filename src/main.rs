@@ -336,10 +336,18 @@ impl Handler for Socket {
     fn on_message(&mut self, msg: Message) -> ws::Result<()> {
         self.sender.timeout(IDLE_TIMEOUT_MS, IDLE_TIMEOUT_TOKEN)?;
 
+        // Fast path for ping.
         let msg = msg.as_text()?;
         if msg == "null" {
-            // Fast path for ping.
             return self.sender.send(Message::text("0"));
+        }
+
+        // Limit message size.
+        if msg.len() > 512 {
+            log::error!("very long message ({} bytes): {}", msg.len(), msg);
+            return self.sender.close(CloseCode::Size);
+        } else if msg.len() > 256 {
+            log::warn!("long message ({} bytes): {}", msg.len(), msg);
         }
 
         match serde_json::from_str(msg) {
@@ -489,6 +497,7 @@ fn main() {
         let mut settings = ws::Settings::default();
         settings.max_connections = opt.max_connections;
         settings.tcp_nodelay = true;
+        settings.in_buffer_grow = false;
 
         let server = ws::Builder::new()
             .with_settings(settings)
