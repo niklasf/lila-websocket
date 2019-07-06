@@ -35,16 +35,16 @@ use crate::ipc::{LilaOut, LilaIn};
 #[derive(StructOpt, Clone)]
 struct Opt {
     /// Binding address of Websocket server
-    #[structopt(default_value = "127.0.0.1:9664")]
+    #[structopt(long = "bind", default_value = "127.0.0.1:9664")]
     bind: String,
     /// URI of redis server
-    #[structopt(default_value = "redis://127.0.0.1/")]
+    #[structopt(long = "redis", default_value = "redis://127.0.0.1/")]
     redis: String,
     /// URI of mongodb with security collection
-    #[structopt(default_value = "mongodb://127.0.0.1/")]
+    #[structopt(long = "mongodb", default_value = "mongodb://127.0.0.1/")]
     mongodb: String,
     /// Hard limit for maximum number of simultaneous Websocket connections
-    #[structopt(default_value = "40000")]
+    #[structopt(long = "max-connections", default_value = "40000")]
     max_connections: usize,
 }
 
