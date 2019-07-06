@@ -74,7 +74,7 @@ enum SocketOut {
     #[serde(rename = "notified")]
     Notified,
     #[serde(rename = "startWatching")]
-    StartWatching { d: GameId },
+    StartWatching { d: String }, // space separated game ids :(
     #[serde(rename = "moveLat")]
     MoveLatency { d: bool },
 }
@@ -350,23 +350,39 @@ impl Handler for Socket {
                 Ok(())
             }
             Ok(SocketOut::StartWatching { d }) => {
-                if self.watching.insert(d.clone()) {
-                    if let Some(state) = self.app.watched_games.read().peek(&d) {
-                        self.sender.send(SocketIn::Fen {
-                            id: &d,
-                            fen: &state.fen,
-                            lm: &state.lm,
-                        }.to_json_string())?;
-                    }
+                for part in d.split(' ').take(20) {
+                    match part.parse::<GameId>() {
+                        Ok(game) => {
+                            if self.watching.insert(game.clone()) {
+                                if self.watching.len() > 20 {
+                                    log::info!("client is watching many games: {}", self.watching.len());
+                                }
 
-                    self.app.by_game.write()
-                        .entry(d.clone())
-                        .and_modify(|v| v.push(self.sender.clone()))
-                        .or_insert_with(|| {
-                            log::debug!("start watching: {:?}", d);
-                            self.app.publish(LilaIn::Watch(&d));
-                            vec![self.sender.clone()]
-                        });
+                                // If cached, send current game state immediately.
+                                if let Some(state) = self.app.watched_games.read().peek(&game) {
+                                    self.sender.send(SocketIn::Fen {
+                                        id: &game,
+                                        fen: &state.fen,
+                                        lm: &state.lm,
+                                    }.to_json_string())?;
+                                }
+
+                                // Subscribe to updates.
+                                self.app.by_game.write()
+                                    .entry(game.clone())
+                                    .and_modify(|v| v.push(self.sender.clone()))
+                                    .or_insert_with(|| {
+                                        log::debug!("start watching: {:?}", game);
+                                        self.app.publish(LilaIn::Watch(&game));
+                                        vec![self.sender.clone()]
+                                    });
+                            }
+                        }
+                        Err(_) => {
+                            log::warn!("start watching with invalid game id: {:?}", part);
+                            return self.sender.close(CloseCode::Protocol);
+                        }
+                    }
                 }
                 Ok(())
             },
