@@ -12,6 +12,12 @@ pub struct GameId(ArrayString<[u8; 8]>);
 #[derive(Debug)]
 pub struct InvalidGameId;
 
+impl fmt::Display for InvalidGameId {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.write_str("invalid game id")
+    }
+}
+
 impl GameId {
     pub fn new(inner: ArrayString<[u8; 8]>) -> Result<GameId, InvalidGameId> {
         if inner.chars().all(|c| c.is_ascii_alphanumeric()) && inner.len() == 8 {

@@ -14,9 +14,11 @@ use mio_extras::timer::Timeout;
 
 use structopt::StructOpt;
 
-use std::collections::{HashMap, HashSet};
 use std::str;
 use std::cmp::max;
+use std::collections::{HashMap, HashSet};
+use smallvec::SmallVec;
+
 use std::sync::atomic::{AtomicI32, AtomicU32, Ordering};
 use once_cell::sync::OnceCell;
 use parking_lot::RwLock;
@@ -25,6 +27,7 @@ use crossbeam::channel;
 
 mod model;
 mod ipc;
+mod util;
 
 use crate::model::{Flag, GameId, UserId};
 use crate::ipc::{LilaOut, LilaIn};
@@ -73,8 +76,8 @@ enum SocketOut {
     Ping { #[allow(unused)] l: Option<u32> },
     #[serde(rename = "notified")]
     Notified,
-    #[serde(rename = "startWatching")]
-    StartWatching { d: String }, // space separated game ids :(
+    #[serde(rename = "startWatching", deserialize_with = "util::space_separated")]
+    StartWatching { d: SmallVec<[GameId; 1]> },
     #[serde(rename = "moveLat")]
     MoveLatency { d: bool },
 }
@@ -351,49 +354,41 @@ impl Handler for Socket {
                 Ok(())
             }
             Ok(SocketOut::StartWatching { d }) => {
-                for part in d.split(' ').take(20) {
-                    match part.parse::<GameId>() {
-                        Ok(game) => {
-                            if self.watching.insert(game.clone()) {
-                                if self.watching.len() > 20 {
-                                    log::info!("client is watching many games: {}", self.watching.len());
+                for game in d {
+                    if self.watching.insert(game.clone()) {
+                        if self.watching.len() > 20 {
+                            log::info!("client is watching many games: {}", self.watching.len());
+                        }
+
+                        // If cached, send current game state immediately.
+                        let was_cached = match self.app.watched_games.read().peek(&game) {
+                            Some(state) => {
+                                self.sender.send(SocketIn::Fen {
+                                    id: &game,
+                                    fen: &state.fen,
+                                    lm: &state.lm,
+                                }.to_json_string())?;
+                                true
+                            },
+                            None => false,
+                        };
+
+                        // Subscribe to updates.
+                        self.app.by_game.write()
+                            .entry(game.clone())
+                            .and_modify(|v| {
+                                v.push(self.sender.clone());
+                                log::debug!("also watching {:?} ({} watchers)", game, v.len());
+                            })
+                            .or_insert_with(|| {
+                                if was_cached {
+                                    log::debug!("a watcher returned to {:?}", game);
+                                } else {
+                                    log::debug!("start watching: {:?}", game);
+                                    self.app.publish(LilaIn::Watch(&game));
                                 }
-
-                                // If cached, send current game state immediately.
-                                let was_cached = match self.app.watched_games.read().peek(&game) {
-                                    Some(state) => {
-                                        self.sender.send(SocketIn::Fen {
-                                            id: &game,
-                                            fen: &state.fen,
-                                            lm: &state.lm,
-                                        }.to_json_string())?;
-                                        true
-                                    },
-                                    None => false,
-                                };
-
-                                // Subscribe to updates.
-                                self.app.by_game.write()
-                                    .entry(game.clone())
-                                    .and_modify(|v| {
-                                        v.push(self.sender.clone());
-                                        log::debug!("also watching {:?} ({} watchers)", game, v.len());
-                                    })
-                                    .or_insert_with(|| {
-                                        if was_cached {
-                                            log::debug!("a watcher returned to {:?}", game);
-                                        } else {
-                                            log::debug!("start watching: {:?}", game);
-                                            self.app.publish(LilaIn::Watch(&game));
-                                        }
-                                        vec![self.sender.clone()]
-                                    });
-                            }
-                        }
-                        Err(_) => {
-                            log::warn!("start watching with invalid game id: {:?}", part);
-                            return self.sender.close(CloseCode::Protocol);
-                        }
+                                vec![self.sender.clone()]
+                            });
                     }
                 }
                 Ok(())
