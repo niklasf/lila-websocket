@@ -1,0 +1,19 @@
+[Unit]
+Description=Lichess websocket server
+After=network.target
+
+[Service]
+#LimitNOFILE=83368
+User=www-data
+Group=www-data
+Environment=RUST_LOG=lila_websocket=debug
+ExecStart=/usr/local/bin/lila-websocket
+PrivateTmp=true
+PrivateDevices=true
+DevicePolicy=closed
+CapabilityBoundingSet=
+NoNewPrivileges=true
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
