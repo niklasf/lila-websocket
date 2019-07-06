@@ -55,11 +55,7 @@ impl<'a> LilaOut<'a> {
             (Some("tell/flag"), Some(args)) => {
                 let mut args = args.splitn(2, ' ');
                 LilaOut::TellFlag {
-                    flag: match args.next() {
-                        Some("tournament") => Flag::Tournament,
-                        Some("simul") => Flag::Simul,
-                        _ => return Err(IpcError),
-                    },
+                    flag: args.next().ok_or(IpcError)?.parse().map_err(|_| IpcError)?,
                     payload: args.next().ok_or(IpcError)?,
                 }
             },

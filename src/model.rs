@@ -101,3 +101,18 @@ pub enum Flag {
     #[serde(rename = "tournament")]
     Tournament = 1,
 }
+
+#[derive(Debug)]
+pub struct UnknownFlag;
+
+impl FromStr for Flag {
+    type Err = UnknownFlag;
+
+    fn from_str(s: &str) -> Result<Flag, UnknownFlag> {
+        Ok(match s {
+            "tournament" => Flag::Tournament,
+            "simul" => Flag::Simul,
+            _ => return Err(UnknownFlag),
+        })
+    }
+}
