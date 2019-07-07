@@ -76,8 +76,11 @@ enum SocketOut {
     Ping { #[allow(unused)] l: Option<u32> },
     #[serde(rename = "notified")]
     Notified,
-    #[serde(rename = "startWatching", deserialize_with = "util::space_separated")]
-    StartWatching { d: SmallVec<[GameId; 1]> },
+    #[serde(rename = "startWatching")]
+    StartWatching {
+        #[serde(deserialize_with = "util::space_separated")]
+        d: SmallVec<[GameId; 1]>
+    },
     #[serde(rename = "moveLat")]
     MoveLatency { d: bool },
 }
