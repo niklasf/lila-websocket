@@ -285,6 +285,14 @@ impl UserSocket {
         }
     }
 
+    fn on_ping(&self, lag: u32) {
+        if let SocketAuth::Authenticated(ref uid) = self.auth {
+            // TODO: Wait for deploy of
+            // https://github.com/ornicar/lila/commit/3c2854b082df974141ac5818d4d02a443195d8ce
+            //self.app.publish(LilaIn::Lag(uid, lag));
+        }
+    }
+
     fn on_notified(&mut self) {
         self.pending_notified = false;
         match &self.auth {
@@ -400,7 +408,10 @@ impl Handler for Socket {
         }
 
         match serde_json::from_str(msg) {
-            Ok(SocketOut::Ping { .. }) => {
+            Ok(SocketOut::Ping { l }) => {
+                if let Some(lag) = l {
+                    self.app.by_id.read().get(&self.socket_id).expect("user socket").on_ping(lag);
+                }
                 self.sender.send(Message::text("0"))
             }
             Ok(SocketOut::Notified) => {
