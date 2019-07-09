@@ -43,7 +43,7 @@ impl<'a> LilaOut<'a> {
             },
             ("tell/user", Some(args)) | ("tell/users", Some(args)) => {
                 let mut args = args.splitn(2, ' ');
-                let maybe_users: Result<_, InvalidUserId> = args.next().unwrap().split(',').map(|u| UserId::new(u)).collect();
+                let maybe_users: Result<_, InvalidUserId> = args.next().unwrap().split(',').map(UserId::new).collect();
                 LilaOut::TellUsers {
                     users: maybe_users.map_err(|_| IpcError)?,
                     payload: args.next().ok_or(IpcError)?,
