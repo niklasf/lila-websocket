@@ -499,6 +499,7 @@ fn main() {
         // Start websocket server.
         let mut settings = ws::Settings::default();
         settings.max_connections = opt.max_connections;
+        settings.queue_size = 10;
         settings.tcp_nodelay = true;
         settings.in_buffer_grow = false;
 
