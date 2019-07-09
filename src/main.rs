@@ -17,6 +17,7 @@ use structopt::StructOpt;
 use std::str;
 use std::mem;
 use std::cmp::max;
+use std::convert::TryInto;
 use std::collections::{HashMap, HashSet};
 use smallvec::SmallVec;
 
@@ -74,7 +75,7 @@ impl<'a> SocketIn<'a> {
 #[serde(tag = "t")]
 enum SocketOut {
     #[serde(rename = "p")]
-    Ping { #[allow(unused)] l: Option<u32> },
+    Ping { #[allow(unused)] l: Option<i32> },
     #[serde(rename = "notified")]
     Notified,
     #[serde(rename = "startWatching")]
@@ -410,7 +411,11 @@ impl Handler for Socket {
         match serde_json::from_str(msg) {
             Ok(SocketOut::Ping { l }) => {
                 if let Some(lag) = l {
-                    self.app.by_id.read().get(&self.socket_id).expect("user socket").on_ping(lag);
+                    if let Ok(lag) = lag.try_into() {
+                        self.app.by_id.read().get(&self.socket_id).expect("user socket").on_ping(lag);
+                    } else {
+                        log::warn!("client reported negative lag: {}", lag);
+                    }
                 }
                 self.sender.send(Message::text("0"))
             }
