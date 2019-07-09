@@ -15,6 +15,7 @@ use mio_extras::timer::Timeout;
 use structopt::StructOpt;
 
 use std::str;
+use std::mem;
 use std::cmp::max;
 use std::collections::{HashMap, HashSet};
 use smallvec::SmallVec;
@@ -106,12 +107,13 @@ const IDLE_TIMEOUT_MS: u64 = 15_000;
 struct App {
     by_user: RwLock<HashMap::<UserId, Vec<Sender>>>,
     by_game: RwLock<HashMap::<GameId, Vec<Sender>>>,
+    by_id: RwLock<HashMap::<SocketId, UserSocket>>,
     watched_games: RwLock<LruCache<GameId, WatchedGame>>,
     flags: [RwLock<HashSet<Sender>>; 2],
     mlat: AtomicU32,
     watching_mlat: RwLock<HashSet<Sender>>,
     redis_sink: channel::Sender<String>,
-    session_store: mongodb::coll::Collection,
+    sid_sink: channel::Sender<(SocketId, SessionCookie)>,
     broadcaster: OnceCell<Sender>,
     connection_count: AtomicI32, // signed to allow relaxed writes with underflow
 }
@@ -122,14 +124,15 @@ struct WatchedGame {
 }
 
 impl App {
-    fn new(redis_sink: channel::Sender<String>, session_store: mongodb::coll::Collection) -> App {
+    fn new(redis_sink: channel::Sender<String>, sid_sink: channel::Sender<(SocketId, SessionCookie)>) -> App {
         App {
             by_user: RwLock::new(HashMap::new()),
             by_game: RwLock::new(HashMap::new()),
+            by_id: RwLock::new(HashMap::new()),
             watched_games: RwLock::new(LruCache::new(5_000)),
             flags: [RwLock::new(HashSet::new()), RwLock::new(HashSet::new())],
             redis_sink,
-            session_store,
+            sid_sink,
             broadcaster: OnceCell::new(),
             connection_count: AtomicI32::new(0),
             mlat: AtomicU32::new(u32::max_value()),
@@ -215,11 +218,81 @@ impl App {
 /// A Websocket client connection.
 struct Socket {
     app: &'static App,
+    socket_id: SocketId,
     sender: Sender,
-    uid: Option<UserId>,
     watching: HashSet<GameId>,
     flag: Option<Flag>,
     idle_timeout: Option<Timeout>,
+}
+
+/// Uniquely identifies a socket connection over the entire runtime of the
+/// application.
+#[derive(Hash, Eq, PartialEq, Copy, Clone)]
+struct SocketId(pub u64);
+
+enum SocketAuth {
+    Requested,
+    Authenticated(UserId),
+    Anonymous,
+}
+
+struct UserSocket {
+    app: &'static App,
+    sender: Sender,
+    auth: SocketAuth,
+    pending_notified: bool,
+}
+
+impl UserSocket {
+    fn set_user(&mut self, maybe_uid: Option<UserId>) {
+        // Connected.
+        let auth = match maybe_uid {
+            Some(uid) => {
+                self.app.by_user.write()
+                    .entry(uid.clone())
+                    .and_modify(|v| v.push(self.sender.clone()))
+                    .or_insert_with(|| {
+                        log::debug!("first open: {}", uid);
+                        self.app.publish(LilaIn::Connect(&uid));
+                        vec![self.sender.clone()]
+                    });
+
+                SocketAuth::Authenticated(uid)
+            },
+            None => SocketAuth::Anonymous,
+        };
+
+        // Disconnected.
+        match mem::replace(&mut self.auth, auth) {
+            SocketAuth::Authenticated(uid) => {
+                let mut by_user = self.app.by_user.write();
+                let entry = by_user.get_mut(&uid).expect("uid in by_user");
+                let idx = entry.iter().position(|s| s.token() == self.sender.token()).expect("sender in by_user entry");
+                entry.swap_remove(idx);
+
+                // Last remaining connection closed.
+                if entry.is_empty() {
+                    by_user.remove(&uid);
+                    log::debug!("last close: {}", uid);
+                    self.app.publish(LilaIn::Disconnect(&uid));
+                }
+            },
+            _ => (),
+        }
+
+        if self.pending_notified {
+            self.on_notified();
+        }
+    }
+
+    fn on_notified(&mut self) {
+        self.pending_notified = false;
+        match &self.auth {
+            SocketAuth::Requested => self.pending_notified = true,
+            SocketAuth::Authenticated(uid) => self.app.publish(LilaIn::Notified(uid)),
+            SocketAuth::Anonymous => log::warn!("anon notified"),
+        }
+    }
 }
 
 impl Handler for Socket {
@@ -227,8 +300,8 @@ impl Handler for Socket {
         // Update connection count.
         self.app.connection_count.fetch_add(1, Ordering::Relaxed);
 
-        // Ask mongodb for user id based on session cookie.
-        self.uid = handshake.request.header("cookie")
+        // Parse session cookie.
+        let maybe_cookie = handshake.request.header("cookie")
             .and_then(|h| str::from_utf8(h).ok())
             .and_then(|h| {
                 h.split(';')
@@ -241,24 +314,20 @@ impl Handler for Socket {
                 let s = c.value();
                 let idx = s.find('-').map(|n| n + 1).unwrap_or(0);
                 serde_urlencoded::from_str::<SessionCookie>(&s[idx..]).ok()
-            })
-            .and_then(|c| {
-                let query = doc! { "_id": &c.session_id, "up": true, };
-                let mut opts = FindOptions::new();
-                opts.projection = Some(doc! { "user": true });
-                match self.app.session_store.find_one(Some(query), Some(opts)) {
-                    Ok(Some(doc)) => doc.get_str("user").map(|s| s.to_owned()).ok(),
-                    Ok(None) => {
-                        log::info!("session store does not have sid: {}", c.session_id);
-                        None
-                    }
-                    Err(err) => {
-                        log::error!("session store query failed: {:?}", err);
-                        None
-                    }
-                }
-            })
-            .and_then(|u| UserId::new(&u).ok());
+            });
+
+        // Update by_id.
+        self.app.by_id.write().insert(self.socket_id, UserSocket {
+            app: self.app,
+            auth: if maybe_cookie.is_some() { SocketAuth::Requested } else { SocketAuth::Anonymous },
+            pending_notified: false,
+            sender: self.sender.clone(),
+        });
+
+        // Request authentication.
+        if let Some(cookie) = maybe_cookie {
+            self.app.sid_sink.send((self.socket_id, cookie)).expect("auth request");
+        }
 
         // Subscribe to flag.
         let path = handshake.request.resource();
@@ -272,18 +341,6 @@ impl Handler for Socket {
                 Ok(_) => (),
                 Err(err) => log::warn!("invalid query string ({:?}): {}", err, qs),
             }
-        }
-
-        // Add socket to by_user map.
-        if let Some(ref uid) = self.uid {
-            self.app.by_user.write()
-                .entry(uid.to_owned())
-                .and_modify(|v| v.push(self.sender.clone()))
-                .or_insert_with(|| {
-                    log::debug!("first open: {}", uid);
-                    self.app.publish(LilaIn::Connect(uid));
-                    vec![self.sender.clone()]
-                });
         }
 
         // Start idle timeout.
@@ -302,20 +359,9 @@ impl Handler for Socket {
             }
         }
 
-        // Update by_user.
-        if let Some(uid) = self.uid.take() {
-            let mut by_user = self.app.by_user.write();
-            let entry = by_user.get_mut(&uid).expect("uid in by_user");
-            let idx = entry.iter().position(|s| s.token() == self.sender.token()).expect("sender in by_user entry");
-            entry.swap_remove(idx);
-
-            // Last remaining connection closed.
-            if entry.is_empty() {
-                by_user.remove(&uid);
-                log::debug!("last close: {}", uid);
-                self.app.publish(LilaIn::Disconnect(&uid));
-            }
-        }
+        // Update by_id.
+        let mut user_socket = self.app.by_id.write().remove(&self.socket_id).expect("user socket");
+        user_socket.set_user(None);
 
         // Update by_game.
         let mut by_game = self.app.by_game.write();
@@ -358,10 +404,10 @@ impl Handler for Socket {
                 self.sender.send(Message::text("0"))
             }
             Ok(SocketOut::Notified) => {
-                if let Some(ref uid) = self.uid {
-                    log::debug!("notified: {}", uid);
-                    self.app.publish(LilaIn::Notified(uid));
-                }
+                let mut write_guard = self.app.by_id.write();
+                write_guard.get_mut(&self.socket_id)
+                    .expect("user socket")
+                    .on_notified();
                 Ok(())
             }
             Ok(SocketOut::StartWatching { d }) => {
@@ -446,13 +492,9 @@ fn main() {
     crossbeam::scope(|s| {
         let opt = Opt::from_args();
 
-        let session_store = mongodb::Client::with_uri(&opt.mongodb)
-            .expect("mongodb connect")
-            .db("lichess")
-            .collection("security");
-
         let (redis_sink, redis_recv) = channel::unbounded();
-        let app: &'static App = Box::leak(Box::new(App::new(redis_sink, session_store)));
+        let (sid_sink, sid_recv) = channel::unbounded();
+        let app: &'static App = Box::leak(Box::new(App::new(redis_sink, sid_sink)));
 
         // Thread for outgoing messages to lila.
         let opt_inner = opt.clone();
@@ -468,6 +510,40 @@ fn main() {
                 let ret: u32 = redis.publish("site-in", msg).expect("publish site-in");
                 if ret == 0 {
                     log::error!("lila missed as message");
+                }
+            }
+        });
+
+        // Thread for session id lookups.
+        let opt_inner = opt.clone();
+        s.spawn(move |_| {
+            let session_store = mongodb::Client::with_uri(opt_inner.mongodb.as_str())
+                .expect("mongodb connect")
+                .db("lichess")
+                .collection("security");
+
+            loop {
+                let (socket_id, cookie) = sid_recv.recv().expect("socket id recv");
+
+                let query = doc! { "_id": &cookie.session_id, "up": true, };
+                let mut opts = FindOptions::new();
+                opts.projection = Some(doc! { "user": true });
+
+                let maybe_uid = match session_store.find_one(Some(query), Some(opts)) {
+                    Ok(Some(doc)) => doc.get_str("user").ok().and_then(|s| UserId::new(s).ok()),
+                    Ok(None) => {
+                        log::info!("session store does not have sid: {}", cookie.session_id);
+                        None
+                    },
+                    Err(err) => {
+                        log::error!("session store query failed: {:?}", err);
+                        None
+                    },
+                };
+
+                let mut write_guard = app.by_id.write();
+                if let Some(user_socket) = write_guard.get_mut(&socket_id) {
+                    user_socket.set_user(maybe_uid);
                 }
             }
         });
@@ -503,13 +579,16 @@ fn main() {
         settings.tcp_nodelay = true;
         settings.in_buffer_grow = false;
 
+        let mut socket_id = 0;
+
         let server = ws::Builder::new()
             .with_settings(settings)
             .build(move |sender| {
+                socket_id += 1;
                 Socket {
                     app,
                     sender,
-                    uid: None,
+                    socket_id: SocketId(socket_id),
                     flag: None,
                     watching: HashSet::new(),
                     idle_timeout: None
