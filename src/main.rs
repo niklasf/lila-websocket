@@ -507,6 +507,9 @@ fn main() {
         let (sid_sink, sid_recv) = channel::unbounded();
         let app: &'static App = Box::leak(Box::new(App::new(redis_sink, sid_sink)));
 
+        // Clear connections and subscriptions from previous process.
+        app.publish(LilaIn::DisconnectAll);
+
         // Thread for outgoing messages to lila.
         let opt_inner = opt.clone();
         s.spawn(move |_| {
