@@ -32,8 +32,8 @@ pub enum LilaOut<'a> {
 impl<'a> LilaOut<'a> {
     pub fn parse(s: &'a str) -> Result<LilaOut<'a>, IpcError> {
         let mut tag_and_args = s.splitn(2, ' ');
-        Ok(match (tag_and_args.next(), tag_and_args.next()) {
-            (Some("move"), Some(args)) => {
+        Ok(match (tag_and_args.next().unwrap(), tag_and_args.next()) {
+            ("move", Some(args)) => {
                 let mut args = args.splitn(3, ' ');
                 LilaOut::Move {
                     game: args.next().ok_or(IpcError)?.parse().map_err(|_| IpcError)?,
@@ -41,25 +41,25 @@ impl<'a> LilaOut<'a> {
                     fen: args.next().ok_or(IpcError)?,
                 }
             },
-            (Some("tell/user"), Some(args)) | (Some("tell/users"), Some(args)) => {
+            ("tell/user", Some(args)) | ("tell/users", Some(args)) => {
                 let mut args = args.splitn(2, ' ');
-                let maybe_users: Result<_, InvalidUserId> = args.next().ok_or(IpcError)?.split(',').map(|u| UserId::new(u)).collect();
+                let maybe_users: Result<_, InvalidUserId> = args.next().unwrap().split(',').map(|u| UserId::new(u)).collect();
                 LilaOut::TellUsers {
                     users: maybe_users.map_err(|_| IpcError)?,
                     payload: args.next().ok_or(IpcError)?,
                 }
             },
-            (Some("tell/all"), Some(payload)) => {
+            ("tell/all", Some(payload)) => {
                 LilaOut::TellAll { payload }
             },
-            (Some("tell/flag"), Some(args)) => {
+            ("tell/flag", Some(args)) => {
                 let mut args = args.splitn(2, ' ');
                 LilaOut::TellFlag {
                     flag: args.next().ok_or(IpcError)?.parse().map_err(|_| IpcError)?,
                     payload: args.next().ok_or(IpcError)?,
                 }
             },
-            (Some("mlat"), Some(value)) => {
+            ("mlat", Some(value)) => {
                 LilaOut::MoveLatency(value.parse().map_err(|_| IpcError)?)
             },
             _ => return Err(IpcError),
