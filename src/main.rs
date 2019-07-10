@@ -52,7 +52,7 @@ struct Opt {
     /// Hard limit for maximum number of simultaneous Websocket connections
     #[structopt(long = "max-connections", default_value = "40000")]
     max_connections: usize,
-    /// Enable rate limit of messages per IP
+    /// How many messages to accept, per IP, per 10s
     #[structopt(long = "rate-limiter-credits", default_value = "40")]
     rate_limiter_credits: u32,
 }
