@@ -429,6 +429,7 @@ impl Handler for Socket {
                     log::warn!("socket of client {} rate limited (will log only once)", client_addr);
                     self.rate_limited_once = true;
                 }
+                return Ok(()); // ignore message
             }
         }
 
