@@ -29,6 +29,32 @@ fn piotr(sq: Square) -> char {
     }
 }
 
+#[derive(Deserialize)]
+enum PromotableRole {
+    #[serde(rename = "knight")]
+    Knight,
+    #[serde(rename = "bishop")]
+    Bishop,
+    #[serde(rename = "rook")]
+    Rook,
+    #[serde(rename = "queen")]
+    Queen,
+    #[serde(rename = "king")]
+    King,
+}
+
+impl From<PromotableRole> for Role {
+    fn from(r: PromotableRole) -> Role {
+        match r {
+            PromotableRole::Knight => Role::Knight,
+            PromotableRole::Bishop => Role::Bishop,
+            PromotableRole::Rook => Role::Rook,
+            PromotableRole::Queen => Role::Queen,
+            PromotableRole::King => Role::King,
+        }
+    }
+}
+
 #[derive(Deserialize, Copy, Clone)]
 enum VariantKey {
     #[serde(rename = "standard")]
@@ -225,7 +251,7 @@ pub struct PlayMove {
     variant: Option<VariantKey>,
     fen: String,
     path: String,
-    promotion: Option<Role>,
+    promotion: Option<PromotableRole>,
     #[serde(rename = "ch")]
     chapter_id: Option<String>,
 }
