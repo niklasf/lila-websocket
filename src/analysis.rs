@@ -371,7 +371,7 @@ impl PlayMove {
     }
 }
 
-#[derive(Deserialize)]
+/* #[derive(Deserialize)]
 pub struct PlayDrop {
     //role: Role,
     //pos: Square,
@@ -385,7 +385,7 @@ impl PlayDrop {
     pub fn respond(self) -> Result<Node, StepFailure> {
         unimplemented!()
     }
-}
+} */
 
 #[derive(Serialize)]
 pub struct Node {
@@ -407,8 +407,8 @@ pub struct Branch {
     check: bool,
     dests: String,
     opening: Option<&'static Opening>,
-    //drops: String, // TODO: ???
-    //crazy_data: String, TODO // ???
+    // TODO: drops
+    // TODO: crazyData
 }
 
 #[derive(Debug)]

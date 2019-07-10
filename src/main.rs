@@ -116,10 +116,10 @@ enum SocketOut {
     AnaDests {
         d: analysis::GetDests,
     },
-    #[serde(rename = "anaDrop")]
+    /* TODO: #[serde(rename = "anaDrop")]
     AnaDrop {
         d: analysis::PlayDrop,
-    },
+    }, */
     #[serde(rename = "anaMove")]
     AnaMove {
         d: analysis::PlayMove,
@@ -583,7 +583,7 @@ impl Handler for Socket {
                     }
                 }.to_json_string())
             }
-            Ok(SocketOut::AnaDrop { d }) => {
+            /* Ok(SocketOut::AnaDrop { d }) => {
                 self.sender.send(match d.respond() {
                     Ok(res) => SocketIn::Node(res),
                     Err(_) => {
@@ -591,7 +591,7 @@ impl Handler for Socket {
                         SocketIn::StepFailure
                     }
                 }.to_json_string())
-            }
+            } */
             Ok(SocketOut::EvalGet) => {
                 log::error!("TODO: implement evalGet");
                 Ok(())
