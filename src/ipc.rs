@@ -77,6 +77,7 @@ pub enum LilaIn<'a> {
     Watch(&'a GameId),
     Connections(u32),
     Lag(&'a UserId, u32),
+    Friends(&'a UserId),
 }
 
 impl<'a> fmt::Display for LilaIn<'a> {
@@ -89,6 +90,7 @@ impl<'a> fmt::Display for LilaIn<'a> {
             LilaIn::Watch(game) => write!(f, "watch {}", game),
             LilaIn::Connections(n) => write!(f, "connections {}", n),
             LilaIn::Lag(uid, lag) => write!(f, "lag {} {}", uid, lag),
+            LilaIn::Friends(uid) => write!(f, "friends {}", uid),
         }
     }
 }

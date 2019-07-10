@@ -85,6 +85,8 @@ enum SocketOut {
     },
     #[serde(rename = "moveLat")]
     MoveLatency { d: bool },
+    #[serde(rename = "following_onlines")]
+    FollowingOnlines,
 }
 
 /// Session cookie from Play framework.
@@ -242,6 +244,7 @@ struct UserSocket {
     sender: Sender,
     auth: SocketAuth,
     pending_notified: bool,
+    pending_following_onlines: bool,
 }
 
 impl UserSocket {
@@ -284,6 +287,10 @@ impl UserSocket {
         if self.pending_notified {
             self.on_notified();
         }
+
+        if self.pending_following_onlines {
+            self.on_following_onlines();
+        }
     }
 
     fn on_ping(&self, lag: u32) {
@@ -298,6 +305,15 @@ impl UserSocket {
             SocketAuth::Requested => self.pending_notified = true,
             SocketAuth::Authenticated(uid) => self.app.publish(LilaIn::Notified(uid)),
             SocketAuth::Anonymous => log::warn!("anon notified"),
+        }
+    }
+
+    fn on_following_onlines(&mut self) {
+        self.pending_following_onlines = false;
+        match &self.auth {
+            SocketAuth::Requested => self.pending_following_onlines = true,
+            SocketAuth::Authenticated(uid) => self.app.publish(LilaIn::Friends(uid)),
+            SocketAuth::Anonymous => log::warn!("anon following_onlines"),
         }
     }
 }
@@ -328,6 +344,7 @@ impl Handler for Socket {
             app: self.app,
             auth: if maybe_cookie.is_some() { SocketAuth::Requested } else { SocketAuth::Anonymous },
             pending_notified: false,
+            pending_following_onlines: false,
             sender: self.sender.clone(),
         });
 
@@ -422,6 +439,13 @@ impl Handler for Socket {
                 write_guard.get_mut(&self.socket_id)
                     .expect("user socket")
                     .on_notified();
+                Ok(())
+            }
+            Ok(SocketOut::FollowingOnlines) => {
+                let mut write_guard = self.app.by_id.write();
+                write_guard.get_mut(&self.socket_id)
+                    .expect("user socket")
+                    .on_following_onlines();
                 Ok(())
             }
             Ok(SocketOut::StartWatching { d }) => {
