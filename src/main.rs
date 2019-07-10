@@ -123,7 +123,10 @@ enum SocketOut {
     #[serde(rename = "anaMove")]
     AnaMove {
         d: analysis::PlayMove,
-    }
+    },
+    // TODO: {"t":"evalGet","d":{"fen":"rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1","path":""}}
+    #[serde(rename = "evalGet")]
+    EvalGet,
 }
 
 /// Session cookie from Play framework.
@@ -588,6 +591,10 @@ impl Handler for Socket {
                         SocketIn::StepFailure
                     }
                 }.to_json_string())
+            }
+            Ok(SocketOut::EvalGet) => {
+                log::error!("TODO: implement evalGet");
+                Ok(())
             }
             Err(err) => {
                 log::warn!("protocol violation of client ({:?}): {}", err, msg);
