@@ -2,6 +2,8 @@ use std::mem;
 
 use serde::{Deserialize, Serialize};
 
+use arrayvec::ArrayString;
+
 use shakmaty::{Square, PositionError, Position, MoveList, Role, IllegalMoveError, Move};
 use shakmaty::variants::{Chess, Giveaway, KingOfTheHill, ThreeCheck, Atomic, Horde, RacingKings, Crazyhouse};
 use shakmaty::fen::{Fen, FenOpts};
@@ -28,6 +30,13 @@ fn lookup_opening(mut fen: Fen) -> Option<&'static Opening> {
     fen.pockets = None;
     fen.remaining_checks = None;
     FULL_OPENING_DB.get(FenOpts::new().epd(&fen).as_str())
+}
+
+fn uci_char_pair(from: Square, to: Square) -> ArrayString<[u8; 2]> {
+    let mut r = ArrayString::new();
+    r.push(piotr(from));
+    r.push(piotr(to));
+    r
 }
 
 fn piotr(sq: Square) -> char {
@@ -349,11 +358,11 @@ impl PlayMove {
                 children: Vec::new(),
                 san: san.to_string(),
                 uci: uci.to_string(),
-                id: "".to_owned(), // ???
+                id: uci_char_pair(self.orig, self.dest),
                 dests: dests(pos.borrow()),
                 check: pos.borrow().is_check(),
                 fen: pos.fen(),
-                ply: pos.borrow().fullmoves(), // todo: check
+                ply: pos.borrow().fullmoves() * 2 - pos.borrow().turn().fold(1, 0),
                 opening: lookup_opening(fen_from_setup(pos.borrow())),
             },
             path: "".to_owned(),
@@ -388,18 +397,18 @@ pub struct Node {
 
 #[derive(Serialize)]
 pub struct Branch {
-    id: String, // uci chair pair
+    id: ArrayString<[u8; 2]>,
     uci: String,
     san: String,
     children: Vec<()>,
-    ply: u32, // game.turns
+    ply: u32,
     fen: String,
     #[serde(flatten)]
-    check: bool, // situation.check (?)
-    dests: String, // dests in the current position
+    check: bool,
+    dests: String,
     opening: Option<&'static Opening>,
-    //drops: String, // ???
-    //crazy_data: String, // ???
+    //drops: String, // TODO: ???
+    //crazy_data: String, TODO // ???
 }
 
 #[derive(Debug)]
