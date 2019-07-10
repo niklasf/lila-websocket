@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 use shakmaty::{Square, PositionError, Position, MoveList, Role, IllegalMoveError, Move};
 use shakmaty::variants::{Chess, Giveaway, KingOfTheHill, ThreeCheck, Atomic, Horde, RacingKings, Crazyhouse};
 use shakmaty::fen::{Fen, FenOpts};
+use shakmaty::san::SanPlus;
 use shakmaty::uci::Uci;
 
 use crate::opening_db::{Opening, FULL_OPENING_DB};
@@ -168,6 +169,7 @@ impl From<VariantKey> for EffectiveVariantKey {
     }
 }
 
+#[derive(Clone)]
 enum VariantPosition {
     Standard(Chess),
     Antichess(Giveaway),
@@ -229,6 +231,19 @@ impl VariantPosition {
             VariantPosition::Horde(ref pos) => uci.to_move(pos),
             VariantPosition::RacingKings(ref pos) => uci.to_move(pos),
             VariantPosition::Crazyhouse(ref pos) => uci.to_move(pos),
+        }
+    }
+
+    fn san_plus(self, m: &Move) -> SanPlus {
+        match self {
+            VariantPosition::Standard(pos) => SanPlus::from_move(pos, m),
+            VariantPosition::Antichess(pos) => SanPlus::from_move(pos, m),
+            VariantPosition::KingOfTheHill(pos) => SanPlus::from_move(pos, m),
+            VariantPosition::ThreeCheck(pos) => SanPlus::from_move(pos, m),
+            VariantPosition::Atomic(pos) => SanPlus::from_move(pos, m),
+            VariantPosition::Horde(pos) => SanPlus::from_move(pos, m),
+            VariantPosition::RacingKings(pos) => SanPlus::from_move(pos, m),
+            VariantPosition::Crazyhouse(pos) => SanPlus::from_move(pos, m),
         }
     }
 }
@@ -326,10 +341,14 @@ impl PlayMove {
         };
 
         let m = pos.uci_to_move(&uci).map_err(|_| StepFailure)?;
+        let san = pos.clone().san_plus(&m);
         pos.borrow_mut().play_unchecked(&m);
 
         Ok(Node {
             node: Branch {
+                children: Vec::new(),
+                san: san.to_string(),
+                uci: uci.to_string(),
                 id: "".to_owned(), // ???
                 dests: dests(pos.borrow()),
                 check: pos.borrow().is_check(),
@@ -370,9 +389,13 @@ pub struct Node {
 #[derive(Serialize)]
 pub struct Branch {
     id: String, // uci chair pair
+    uci: String,
+    san: String,
+    children: Vec<()>,
     ply: u32, // game.turns
     fen: String,
-    check: bool, // situation.check
+    #[serde(flatten)]
+    check: bool, // situation.check (?)
     dests: String, // dests in the current position
     opening: Option<&'static Opening>,
     //drops: String, // ???
