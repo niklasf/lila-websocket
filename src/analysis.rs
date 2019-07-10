@@ -1,6 +1,6 @@
 use std::mem;
 
-use serde::{Deserialize, Serialize, Deserializer, de};
+use serde::{Deserialize, Serialize};
 
 use shakmaty::{Square, PositionError, Position, MoveList, Role};
 use shakmaty::variants::{Chess, Giveaway, KingOfTheHill, ThreeCheck, Atomic, Horde, RacingKings, Crazyhouse};
