@@ -215,6 +215,37 @@ pub struct DestsResponse {
 #[derive(Debug)]
 pub struct DestsFailure;
 
+#[derive(Deserialize)]
+pub struct GetDrop {
+    //role: Role,
+    //pos: Square,
+    variant: Option<VariantKey>,
+    fen: String,
+    path: String,
+    chapter_id: Option<String>,
+}
+
+impl GetDrop {
+    pub fn respond(self) -> Result<DropResponse, StepFailure> {
+        unimplemented!()
+    }
+}
+
+#[derive(Serialize)]
+pub struct Branch {
+}
+
+#[derive(Serialize)]
+pub struct DropResponse {
+    node: Branch,
+    path: String,
+    #[serde(rename = "ch", flatten)]
+    chapter_id: Option<String>,
+}
+
+#[derive(Debug)]
+pub struct StepFailure;
+
 #[cfg(test)]
 mod tests {
     use super::*;

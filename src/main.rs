@@ -79,6 +79,10 @@ enum SocketIn<'a> {
     DestsFailure,
     #[serde(rename = "dests")]
     Dests(analysis::DestsResponse),
+    #[serde(rename = "stepFailure")]
+    StepFailure,
+    #[serde(rename = "node")]
+    Node(analysis::DropResponse),
 }
 
 impl<'a> SocketIn<'a> {
@@ -109,9 +113,13 @@ enum SocketOut {
         d: analysis::GetOpening,
     },
     #[serde(rename = "anaDests")]
-    AnalysisDests {
+    AnaDests {
         d: analysis::GetDests,
-    }
+    },
+    #[serde(rename = "anaDrop")]
+    AnaDrop {
+        d: analysis::GetDrop,
+    },
 }
 
 /// Session cookie from Play framework.
@@ -550,13 +558,22 @@ impl Handler for Socket {
                 }
                 Ok(())
             }
-            Ok(SocketOut::AnalysisDests { d }) => {
+            Ok(SocketOut::AnaDests { d }) => {
                 self.sender.send(match d.respond() {
                     Ok(res) => SocketIn::Dests(res),
                     Err(_) => {
-                        log::warn!("dests failure: {}", msg);
+                        log::warn!("analysis dests failure: {}", msg);
                         SocketIn::DestsFailure
                     },
+                }.to_json_string())
+            }
+            Ok(SocketOut::AnaDrop { d }) => {
+                self.sender.send(match d.respond() {
+                    Ok(res) => SocketIn::Node(res),
+                    Err(_) => {
+                        log::warn!("analysis drop failure: {}", msg);
+                        SocketIn::StepFailure
+                    }
                 }.to_json_string())
             }
             Err(err) => {
