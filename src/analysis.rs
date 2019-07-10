@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 
 use arrayvec::ArrayString;
 
-use shakmaty::{Square, PositionError, Position, MoveList, Role, IllegalMoveError, Move};
+use shakmaty::{Square, PositionError, Position, MoveList, Role, IllegalMoveError, Move, File};
 use shakmaty::variants::{Chess, Giveaway, KingOfTheHill, ThreeCheck, Atomic, Horde, RacingKings, Crazyhouse};
 use shakmaty::fen::{Fen, FenOpts};
 use shakmaty::san::SanPlus;
@@ -32,12 +32,39 @@ fn lookup_opening(mut fen: Fen) -> Option<&'static Opening> {
     FULL_OPENING_DB.get(FenOpts::new().epd(&fen).as_str())
 }
 
-// TODO: Promotion
-fn uci_char_pair(from: Square, to: Square) -> ArrayString<[u8; 2]> {
+fn uci_char_pair(uci: &Uci) -> ArrayString<[u8; 2]> {
     let mut r = ArrayString::new();
-    r.push(piotr(from));
-    r.push(piotr(to));
+    match *uci {
+        Uci::Normal { from, to, promotion: None } => {
+            r.push(square_id(from));
+            r.push(square_id(to));
+        }
+        Uci::Normal { from, to, promotion: Some(role) } => {
+            r.push(square_id(from));
+            r.push(promotion_id(to.file(), role));
+        }
+        Uci::Put { to, role } => {
+            r.push(square_id(to));
+            r.push(drop_role_id(role));
+        }
+        Uci::Null => {
+            r.push(35 as char);
+            r.push(35 as char);
+        }
+    }
     r
+}
+
+fn square_id(sq: Square) -> char {
+    (u8::from(sq) + 35) as char
+}
+
+fn drop_role_id(role: Role) -> char {
+    (35 + 64 + 8 * 5 + u8::from(role)) as char
+}
+
+fn promotion_id(file: File, role: Role) -> char {
+    (35 + 64 + (u8::from(role) - 1) * 8 + u8::from(file) - 1) as char
 }
 
 fn piotr(sq: Square) -> char {
@@ -358,7 +385,7 @@ impl PlayMove {
                 children: Vec::new(),
                 san: san.to_string(),
                 uci: uci.to_string(),
-                id: uci_char_pair(self.orig, self.dest),
+                id: uci_char_pair(&uci),
                 dests: dests(pos.borrow()),
                 check: pos.borrow().is_check(),
                 fen: pos.fen(),
