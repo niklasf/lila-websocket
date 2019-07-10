@@ -1,3 +1,5 @@
+#![feature(proc_macro_hygiene)]
+
 use mongodb::ThreadedClient as _;
 use mongodb::db::ThreadedDatabase as _;
 use mongodb::coll::options::FindOptions;
@@ -34,6 +36,7 @@ use ratelimit_meter::KeyedRateLimiter;
 mod model;
 mod ipc;
 mod util;
+mod opening_db;
 
 use crate::model::{Flag, GameId, UserId};
 use crate::ipc::{LilaOut, LilaIn};
