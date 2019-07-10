@@ -127,6 +127,8 @@ enum SocketOut {
     // TODO: {"t":"evalGet","d":{"fen":"rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1","path":""}}
     #[serde(rename = "evalGet")]
     EvalGet,
+    #[serde(rename = "ping")]
+    ChallengePing,
 }
 
 /// Session cookie from Play framework.
@@ -359,7 +361,7 @@ impl UserSocket {
         match &self.auth {
             SocketAuth::Requested => self.pending_following_onlines = true,
             SocketAuth::Authenticated(uid) => self.app.publish(LilaIn::Friends(uid)),
-            SocketAuth::Anonymous => log::warn!("anon following_onlines"),
+            SocketAuth::Anonymous => log::debug!("anon following_onlines"),
         }
     }
 }
@@ -482,10 +484,10 @@ impl Handler for Socket {
         }
 
         // Limit message size.
-        if msg.len() > 512 {
+        if msg.len() > 1024 {
             log::warn!("very long message ({} bytes): {}", msg.len(), msg);
             return self.sender.close(CloseCode::Size);
-        } else if msg.len() > 256 {
+        } else if msg.len() > 512 {
             log::info!("long message ({} bytes): {}", msg.len(), msg);
         }
 
@@ -594,6 +596,10 @@ impl Handler for Socket {
             } */
             Ok(SocketOut::EvalGet) => {
                 log::error!("TODO: implement evalGet");
+                Ok(())
+            }
+            Ok(SocketOut::ChallengePing) => {
+                log::warn!("unexpected challenge ping (ua: {:?}): {}", self.user_agent, msg);
                 Ok(())
             }
             Err(err) => {
