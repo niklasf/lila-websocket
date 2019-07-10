@@ -32,6 +32,7 @@ fn lookup_opening(mut fen: Fen) -> Option<&'static Opening> {
     FULL_OPENING_DB.get(FenOpts::new().epd(&fen).as_str())
 }
 
+// TODO: Promotion
 fn uci_char_pair(from: Square, to: Square) -> ArrayString<[u8; 2]> {
     let mut r = ArrayString::new();
     r.push(piotr(from));
@@ -314,9 +315,8 @@ impl GetDests {
 pub struct DestsResponse {
     path: String,
     dests: String,
-    #[serde(flatten)]
     opening: Option<&'static Opening>,
-    #[serde(rename = "ch", flatten)]
+    #[serde(rename = "ch")]
     chapter_id: Option<String>,
 }
 
@@ -360,7 +360,7 @@ impl PlayMove {
                 uci: uci.to_string(),
                 id: uci_char_pair(self.orig, self.dest),
                 dests: dests(pos.borrow()),
-                check: Some(pos.borrow().is_check()).filter(|c| *c),
+                check: pos.borrow().is_check(),
                 fen: pos.fen(),
                 ply: (pos.borrow().fullmoves() - 1) * 2 + pos.borrow().turn().fold(0, 1),
                 opening: lookup_opening(fen_from_setup(pos.borrow())),
@@ -391,7 +391,7 @@ impl PlayDrop {
 pub struct Node {
     node: Branch,
     path: String,
-    #[serde(rename = "ch", flatten)]
+    #[serde(rename = "ch")]
     chapter_id: Option<String>,
 }
 
@@ -403,8 +403,8 @@ pub struct Branch {
     children: Vec<()>,
     ply: u32,
     fen: String,
-    #[serde(flatten)]
-    check: Option<bool>,
+    #[serde(skip_serializing_if = "util::is_false")]
+    check: bool,
     dests: String,
     opening: Option<&'static Opening>,
     //drops: String, // TODO: ???

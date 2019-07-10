@@ -70,3 +70,7 @@ where
     let visitor = Parsable(PhantomData);
     deserializer.deserialize_str(visitor)
 }
+
+pub fn is_false(v: &bool) -> bool {
+    !*v
+}
