@@ -32,7 +32,7 @@ fn lookup_opening(mut fen: Fen) -> Option<&'static Opening> {
     FULL_OPENING_DB.get(FenOpts::new().epd(&fen).as_str())
 }
 
-fn uci_char_pair(uci: &Uci) -> ArrayString<[u8; 2]> {
+fn uci_char_pair(uci: &Uci) -> ArrayString<[u8; 3]> {
     let mut r = ArrayString::new();
     match *uci {
         Uci::Normal { from, to, promotion: None } => {
@@ -60,7 +60,14 @@ fn square_id(sq: Square) -> char {
 }
 
 fn drop_role_id(role: Role) -> char {
-    (35 + 64 + 8 * 5 + u8::from(role)) as char
+    (35 + 64 + 8 * 5 + match role {
+        Role::King => 0u8, // cannot be dropped
+        Role::Queen => 0,
+        Role::Rook => 1,
+        Role::Bishop => 2,
+        Role::Knight => 3,
+        Role::Pawn => 4,
+    }) as char
 }
 
 fn promotion_id(file: File, role: Role) -> char {
@@ -424,7 +431,7 @@ pub struct Node {
 
 #[derive(Serialize)]
 pub struct Branch {
-    id: ArrayString<[u8; 2]>,
+    id: ArrayString<[u8; 3]>,
     uci: String,
     san: String,
     children: Vec<()>,
@@ -447,13 +454,25 @@ mod tests {
 
     #[test]
     fn test_piotr() {
-        assert_eq!(piotr(Square::A1), b'a');
-        assert_eq!(piotr(Square::B4), b'z');
-        assert_eq!(piotr(Square::C4), b'A');
-        assert_eq!(piotr(Square::D7), b'Z');
-        assert_eq!(piotr(Square::E7), b'0');
-        assert_eq!(piotr(Square::F8), b'9');
-        assert_eq!(piotr(Square::G8), b'!');
-        assert_eq!(piotr(Square::H8), b'?');
+        assert_eq!(piotr(Square::A1), 'a');
+        assert_eq!(piotr(Square::B4), 'z');
+        assert_eq!(piotr(Square::C4), 'A');
+        assert_eq!(piotr(Square::D7), 'Z');
+        assert_eq!(piotr(Square::E7), '0');
+        assert_eq!(piotr(Square::F8), '9');
+        assert_eq!(piotr(Square::G8), '!');
+        assert_eq!(piotr(Square::H8), '?');
+    }
+
+    #[test]
+    fn test_uci_char_pair() {
+        // regular moves
+        assert_eq!(&uci_char_pair(&Uci::Normal { from: Square::A1, to: Square::B1, promotion: None }), "#$");
+        assert_eq!(&uci_char_pair(&Uci::Normal { from: Square::A1, to: Square::A2, promotion: None }), "#+");
+        assert_eq!(&uci_char_pair(&Uci::Normal { from: Square::H7, to: Square::H8, promotion: None }), "Zb");
+
+        // drops
+        assert_eq!(&uci_char_pair(&Uci::Put { to: Square::A1, role: Role::Pawn }), "#\u{8f}");
+        assert_eq!(&uci_char_pair(&Uci::Put { to: Square::H8, role: Role::Queen }), "b\u{8b}");
     }
 }
