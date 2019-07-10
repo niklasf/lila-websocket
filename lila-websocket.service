@@ -3,7 +3,7 @@ Description=Lichess websocket server
 After=network.target
 
 [Service]
-#LimitNOFILE=83368
+LimitNOFILE=80000
 User=www-data
 Group=www-data
 Environment=RUST_LOG=lila_websocket=debug
