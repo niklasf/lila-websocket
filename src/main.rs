@@ -18,14 +18,18 @@ use std::str;
 use std::mem;
 use std::cmp::max;
 use std::convert::TryInto;
+use std::net::IpAddr;
+use std::num::NonZeroU32;
+use std::time::Duration;
 use std::collections::{HashMap, HashSet};
 use smallvec::SmallVec;
 
 use std::sync::atomic::{AtomicI32, AtomicU32, Ordering};
 use once_cell::sync::OnceCell;
-use parking_lot::RwLock;
+use parking_lot::{RwLock, Mutex};
 use lru::LruCache;
 use crossbeam::channel;
+use ratelimit_meter::KeyedRateLimiter;
 
 mod model;
 mod ipc;
@@ -119,6 +123,7 @@ struct App {
     sid_sink: channel::Sender<(SocketId, SessionCookie)>,
     broadcaster: OnceCell<Sender>,
     connection_count: AtomicI32, // signed to allow relaxed writes with underflow
+    limiter: Mutex<KeyedRateLimiter<IpAddr>>,
 }
 
 struct WatchedGame {
@@ -140,6 +145,7 @@ impl App {
             connection_count: AtomicI32::new(0),
             mlat: AtomicU32::new(u32::max_value()),
             watching_mlat: RwLock::new(HashSet::new()),
+            limiter: Mutex::new(KeyedRateLimiter::new(NonZeroU32::new(40).unwrap(), Duration::from_secs(10))),
         }
     }
 
@@ -204,6 +210,9 @@ impl App {
                         log::error!("failed to send mlat: {:?}", err);
                     }
                 }
+
+                // Remove IPs not seen for 60 seconds.
+                self.limiter.lock().cleanup(Duration::from_secs(60));
             }
             LilaOut::TellFlag { flag, payload } => {
                 let watching_flag = self.flags[flag as usize].read();
@@ -222,6 +231,8 @@ impl App {
 struct Socket {
     app: &'static App,
     socket_id: SocketId,
+    client_addr: Option<IpAddr>,
+    rate_limited_once: bool,
     sender: Sender,
     watching: HashSet<GameId>,
     flag: Option<Flag>,
@@ -323,6 +334,9 @@ impl Handler for Socket {
         // Update connection count.
         self.app.connection_count.fetch_add(1, Ordering::Relaxed);
 
+        // Get client address.
+        self.client_addr = handshake.request.client_addr()?.and_then(|ip| ip.parse().ok());
+
         // Parse session cookie.
         let maybe_cookie = handshake.request.header("cookie")
             .and_then(|h| str::from_utf8(h).ok())
@@ -408,6 +422,15 @@ impl Handler for Socket {
     }
 
     fn on_message(&mut self, msg: Message) -> ws::Result<()> {
+        if let Some(client_addr) = self.client_addr {
+            if let Err(_) = self.app.limiter.lock().check(client_addr) {
+                if !self.rate_limited_once {
+                    log::warn!("socket of client {} rate limited (will log only once)", client_addr);
+                    self.rate_limited_once = true;
+                }
+            }
+        }
+
         self.sender.timeout(IDLE_TIMEOUT_MS, IDLE_TIMEOUT_TOKEN)?;
 
         // Fast path for ping.
@@ -623,9 +646,11 @@ fn main() {
                     app,
                     sender,
                     socket_id: SocketId(socket_id),
-                    flag: None,
+                    client_addr: None, // set during handshake
+                    rate_limited_once: false,
+                    flag: None, // set during handshake
                     watching: HashSet::new(),
-                    idle_timeout: None
+                    idle_timeout: None, // set during handshake
                 }
             })
             .expect("valid settings");
