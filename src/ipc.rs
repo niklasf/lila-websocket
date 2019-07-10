@@ -89,7 +89,7 @@ impl<'a> fmt::Display for LilaIn<'a> {
             LilaIn::DisconnectAll => write!(f, "disconnect/all"),
             LilaIn::Notified(uid) => write!(f, "notified {}", uid),
             LilaIn::Watch(game) => write!(f, "watch {}", game),
-            LilaIn::Unwatch(game) => write!(f, "watch {}", game),
+            LilaIn::Unwatch(game) => write!(f, "unwatch {}", game),
             LilaIn::Connections(n) => write!(f, "connections {}", n),
             LilaIn::Lag(uid, lag) => write!(f, "lag {} {}", uid, lag),
             LilaIn::Friends(uid) => write!(f, "friends {}", uid),
