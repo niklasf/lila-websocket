@@ -274,8 +274,8 @@ impl UserSocket {
             None => SocketAuth::Anonymous,
         };
 
-        // Disconnected.
         match mem::replace(&mut self.auth, auth) {
+            // Disconnected.
             SocketAuth::Authenticated(uid) => {
                 let mut by_user = self.app.by_user.write();
                 let entry = by_user.get_mut(&uid).expect("uid in by_user");
@@ -289,15 +289,17 @@ impl UserSocket {
                     self.app.publish(LilaIn::Disconnect(&uid));
                 }
             },
-            _ => (),
-        }
+            // Authentication request finished.
+            SocketAuth::Requested => {
+                if self.pending_notified {
+                    self.on_notified();
+                }
 
-        if self.pending_notified {
-            self.on_notified();
-        }
-
-        if self.pending_following_onlines {
-            self.on_following_onlines();
+                if self.pending_following_onlines {
+                    self.on_following_onlines();
+                }
+            },
+            SocketAuth::Anonymous => (),
         }
     }
 
