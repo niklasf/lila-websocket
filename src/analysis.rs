@@ -1,6 +1,9 @@
+use std::mem;
+
 use serde::{Deserialize, Serialize};
 
-use shakmaty::Square;
+use shakmaty::{Square, PositionError, Position, MoveList};
+use shakmaty::variants::{Chess, Giveaway, KingOfTheHill, ThreeCheck, Atomic, Horde, RacingKings, Crazyhouse};
 use shakmaty::fen::{Fen, FenOpts};
 
 use crate::opening_db::{Opening, FULL_OPENING_DB};
@@ -11,17 +14,17 @@ fn lookup_opening(mut fen: Fen) -> Option<&'static Opening> {
     FULL_OPENING_DB.get(FenOpts::new().epd(&fen).as_str())
 }
 
-fn piotr(sq: Square) -> u8 {
+fn piotr(sq: Square) -> char {
     if sq < Square::C4 {
-        b'a' + u8::from(sq)
+        (b'a' + u8::from(sq)) as char
     } else if sq < Square::E7 {
-        b'A' + (sq - Square::C4) as u8
+        (b'A' + (sq - Square::C4) as u8) as char
     } else if sq < Square::G8 {
-        b'0' + (sq - Square::E7) as u8
+        (b'0' + (sq - Square::E7) as u8) as char
     } else if sq == Square::G8 {
-        b'!'
+        '!'
     } else {
-        b'?'
+        '?'
     }
 }
 
@@ -71,6 +74,19 @@ impl EffectiveVariantKey {
             _ => false,
         }
     }
+
+    fn position(self, fen: &Fen) -> Result<VariantPosition, PositionError> {
+        match self {
+            EffectiveVariantKey::Standard => fen.position().map(VariantPosition::Standard),
+            EffectiveVariantKey::Antichess => fen.position().map(VariantPosition::Antichess),
+            EffectiveVariantKey::KingOfTheHill => fen.position().map(VariantPosition::KingOfTheHill),
+            EffectiveVariantKey::ThreeCheck => fen.position().map(VariantPosition::ThreeCheck),
+            EffectiveVariantKey::Atomic => fen.position().map(VariantPosition::Atomic),
+            EffectiveVariantKey::Horde => fen.position().map(VariantPosition::Horde),
+            EffectiveVariantKey::RacingKings => fen.position().map(VariantPosition::RacingKings),
+            EffectiveVariantKey::Crazyhouse => fen.position().map(VariantPosition::Crazyhouse),
+        }
+    }
 }
 
 impl From<VariantKey> for EffectiveVariantKey {
@@ -85,6 +101,32 @@ impl From<VariantKey> for EffectiveVariantKey {
             VariantKey::Horde => EffectiveVariantKey::Horde,
             VariantKey::RacingKings => EffectiveVariantKey::RacingKings,
             VariantKey::Crazyhouse => EffectiveVariantKey::Crazyhouse,
+        }
+    }
+}
+
+enum VariantPosition {
+    Standard(Chess),
+    Antichess(Giveaway),
+    KingOfTheHill(KingOfTheHill),
+    ThreeCheck(ThreeCheck),
+    Atomic(Atomic),
+    Horde(Horde),
+    RacingKings(RacingKings),
+    Crazyhouse(Crazyhouse),
+}
+
+impl VariantPosition {
+    fn borrow(&self) -> &dyn Position {
+        match *self {
+            VariantPosition::Standard(ref pos) => pos,
+            VariantPosition::Antichess(ref pos) => pos,
+            VariantPosition::KingOfTheHill(ref pos) => pos,
+            VariantPosition::ThreeCheck(ref pos) => pos,
+            VariantPosition::Atomic(ref pos) => pos,
+            VariantPosition::Horde(ref pos) => pos,
+            VariantPosition::RacingKings(ref pos) => pos,
+            VariantPosition::Crazyhouse(ref pos) => pos,
         }
     }
 }
@@ -129,8 +171,27 @@ pub struct GetDests {
 
 impl GetDests {
     pub fn respond(self) -> Result<DestsResponse, DestsFailure> {
+        let variant = EffectiveVariantKey::from(self.variant.unwrap_or(VariantKey::Standard));
         let fen: Fen = self.fen.parse().map_err(|_| DestsFailure)?;
-        let dests: String = "".to_owned(); // TODO
+        let pos = variant.position(&fen).map_err(|_| DestsFailure)?;
+
+        let mut legals = MoveList::new();
+        pos.borrow().legal_moves(&mut legals);
+
+        let mut dests = String::with_capacity(80);
+        let mut first = true;
+        for from_sq in pos.borrow().us() {
+            let mut from_here = legals.iter().filter(|m| m.from() == Some(from_sq)).peekable();
+            if from_here.peek().is_some() {
+                if mem::replace(&mut first, false) {
+                    dests.push(' ');
+                }
+                dests.push(piotr(from_sq));
+                for m in from_here {
+                    dests.push(piotr(m.to()));
+                }
+            }
+        }
 
         Ok(DestsResponse {
             path: self.path,

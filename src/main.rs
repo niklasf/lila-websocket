@@ -553,7 +553,10 @@ impl Handler for Socket {
             Ok(SocketOut::AnalysisDests { d }) => {
                 self.sender.send(match d.respond() {
                     Ok(res) => SocketIn::Dests(res),
-                    Err(_) => SocketIn::DestsFailure,
+                    Err(_) => {
+                        log::warn!("dests failure: {}", msg);
+                        SocketIn::DestsFailure
+                    },
                 }.to_json_string())
             }
             Err(err) => {
