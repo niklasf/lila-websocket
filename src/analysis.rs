@@ -2,12 +2,26 @@ use std::mem;
 
 use serde::{Deserialize, Serialize};
 
-use shakmaty::{Square, PositionError, Position, MoveList, Role};
+use shakmaty::{Square, PositionError, Position, MoveList, Role, IllegalMoveError, Move};
 use shakmaty::variants::{Chess, Giveaway, KingOfTheHill, ThreeCheck, Atomic, Horde, RacingKings, Crazyhouse};
 use shakmaty::fen::{Fen, FenOpts};
+use shakmaty::uci::Uci;
 
 use crate::opening_db::{Opening, FULL_OPENING_DB};
 use crate::util;
+
+fn fen_from_setup(setup: &dyn Position) -> Fen {
+    Fen {
+        board: setup.board().clone(),
+        pockets: setup.pockets().cloned(),
+        turn: setup.turn(),
+        castling_rights: setup.castling_rights(),
+        ep_square: setup.ep_square(),
+        remaining_checks: setup.remaining_checks().cloned(),
+        halfmoves: setup.halfmoves(),
+        fullmoves: setup.fullmoves(),
+    }
+}
 
 fn lookup_opening(mut fen: Fen) -> Option<&'static Opening> {
     fen.pockets = None;
@@ -27,6 +41,28 @@ fn piotr(sq: Square) -> char {
     } else {
         '?'
     }
+}
+
+fn dests(pos: &dyn Position) -> String {
+    let mut legals = MoveList::new();
+    pos.legal_moves(&mut legals);
+
+    let mut dests = String::with_capacity(80);
+    let mut first = true;
+    for from_sq in pos.us() {
+        let mut from_here = legals.iter().filter(|m| m.from() == Some(from_sq)).peekable();
+        if from_here.peek().is_some() {
+            if mem::replace(&mut first, false) {
+                dests.push(' ');
+            }
+            dests.push(piotr(from_sq));
+            for m in from_here {
+                dests.push(piotr(m.to()));
+            }
+        }
+    }
+
+    dests
 }
 
 #[derive(Deserialize)]
@@ -156,6 +192,45 @@ impl VariantPosition {
             VariantPosition::Crazyhouse(ref pos) => pos,
         }
     }
+
+    fn borrow_mut(&mut self) -> &mut dyn Position {
+        match *self {
+            VariantPosition::Standard(ref mut pos) => pos,
+            VariantPosition::Antichess(ref mut pos) => pos,
+            VariantPosition::KingOfTheHill(ref mut pos) => pos,
+            VariantPosition::ThreeCheck(ref mut pos) => pos,
+            VariantPosition::Atomic(ref mut pos) => pos,
+            VariantPosition::Horde(ref mut pos) => pos,
+            VariantPosition::RacingKings(ref mut pos) => pos,
+            VariantPosition::Crazyhouse(ref mut pos) => pos,
+        }
+    }
+
+    fn fen(&self) -> String {
+        match *self {
+            VariantPosition::Standard(ref pos) => FenOpts::default().fen(pos),
+            VariantPosition::Antichess(ref pos) => FenOpts::default().fen(pos),
+            VariantPosition::KingOfTheHill(ref pos) => FenOpts::default().fen(pos),
+            VariantPosition::ThreeCheck(ref pos) => FenOpts::default().fen(pos),
+            VariantPosition::Atomic(ref pos) => FenOpts::default().fen(pos),
+            VariantPosition::Horde(ref pos) => FenOpts::default().fen(pos),
+            VariantPosition::RacingKings(ref pos) => FenOpts::default().fen(pos),
+            VariantPosition::Crazyhouse(ref pos) => FenOpts::default().fen(pos),
+        }
+    }
+
+    fn uci_to_move(&self, uci: &Uci) -> Result<Move, IllegalMoveError> {
+        match *self {
+            VariantPosition::Standard(ref pos) => uci.to_move(pos),
+            VariantPosition::Antichess(ref pos) => uci.to_move(pos),
+            VariantPosition::KingOfTheHill(ref pos) => uci.to_move(pos),
+            VariantPosition::ThreeCheck(ref pos) => uci.to_move(pos),
+            VariantPosition::Atomic(ref pos) => uci.to_move(pos),
+            VariantPosition::Horde(ref pos) => uci.to_move(pos),
+            VariantPosition::RacingKings(ref pos) => uci.to_move(pos),
+            VariantPosition::Crazyhouse(ref pos) => uci.to_move(pos),
+        }
+    }
 }
 
 #[derive(Deserialize)]
@@ -202,29 +277,11 @@ impl GetDests {
         let fen: Fen = self.fen.parse().map_err(|_| DestsFailure)?;
         let pos = variant.position(&fen).map_err(|_| DestsFailure)?;
 
-        let mut legals = MoveList::new();
-        pos.borrow().legal_moves(&mut legals);
-
-        let mut dests = String::with_capacity(80);
-        let mut first = true;
-        for from_sq in pos.borrow().us() {
-            let mut from_here = legals.iter().filter(|m| m.from() == Some(from_sq)).peekable();
-            if from_here.peek().is_some() {
-                if mem::replace(&mut first, false) {
-                    dests.push(' ');
-                }
-                dests.push(piotr(from_sq));
-                for m in from_here {
-                    dests.push(piotr(m.to()));
-                }
-            }
-        }
-
         Ok(DestsResponse {
             path: self.path,
             opening: lookup_opening(fen),
             chapter_id: self.chapter_id,
-            dests,
+            dests: dests(pos.borrow()),
         })
     }
 }
@@ -258,7 +315,31 @@ pub struct PlayMove {
 
 impl PlayMove {
     pub fn respond(self) -> Result<Node, StepFailure> {
-        unimplemented!()
+        let variant = EffectiveVariantKey::from(self.variant.unwrap_or(VariantKey::Standard));
+        let fen: Fen = self.fen.parse().map_err(|_| StepFailure)?;
+        let mut pos = variant.position(&fen).map_err(|_| StepFailure)?;
+
+        let uci = Uci::Normal {
+            from: self.orig,
+            to: self.dest,
+            promotion: self.promotion.map(|r| r.into()),
+        };
+
+        let m = pos.uci_to_move(&uci).map_err(|_| StepFailure)?;
+        pos.borrow_mut().play_unchecked(&m);
+
+        Ok(Node {
+            node: Branch {
+                id: "".to_owned(), // ???
+                dests: dests(pos.borrow()),
+                check: pos.borrow().is_check(),
+                fen: pos.fen(),
+                ply: pos.borrow().fullmoves(), // todo: check
+                opening: lookup_opening(fen_from_setup(pos.borrow())),
+            },
+            path: "".to_owned(),
+            chapter_id: self.chapter_id
+        })
     }
 }
 
@@ -294,8 +375,8 @@ pub struct Branch {
     check: bool, // situation.check
     dests: String, // dests in the current position
     opening: Option<&'static Opening>,
-    drops: String, // ???
-    crazy_data: String, // ???
+    //drops: String, // ???
+    //crazy_data: String, // ???
 }
 
 #[derive(Debug)]
