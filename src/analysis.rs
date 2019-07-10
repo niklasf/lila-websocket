@@ -1,12 +1,13 @@
 use std::mem;
 
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize, Deserializer, de};
 
-use shakmaty::{Square, PositionError, Position, MoveList};
+use shakmaty::{Square, PositionError, Position, MoveList, Role};
 use shakmaty::variants::{Chess, Giveaway, KingOfTheHill, ThreeCheck, Atomic, Horde, RacingKings, Crazyhouse};
 use shakmaty::fen::{Fen, FenOpts};
 
 use crate::opening_db::{Opening, FULL_OPENING_DB};
+use crate::util;
 
 fn lookup_opening(mut fen: Fen) -> Option<&'static Opening> {
     fen.pockets = None;
@@ -216,7 +217,27 @@ pub struct DestsResponse {
 pub struct DestsFailure;
 
 #[derive(Deserialize)]
-pub struct GetDrop {
+pub struct PlayMove {
+    #[serde(deserialize_with = "util::parsable")]
+    orig: Square,
+    #[serde(deserialize_with = "util::parsable")]
+    dest: Square,
+    variant: Option<VariantKey>,
+    fen: String,
+    path: String,
+    promotion: Option<Role>,
+    #[serde(rename = "ch")]
+    chapter_id: Option<String>,
+}
+
+impl PlayMove {
+    pub fn respond(self) -> Result<Node, StepFailure> {
+        unimplemented!()
+    }
+}
+
+#[derive(Deserialize)]
+pub struct PlayDrop {
     //role: Role,
     //pos: Square,
     variant: Option<VariantKey>,
@@ -225,22 +246,30 @@ pub struct GetDrop {
     chapter_id: Option<String>,
 }
 
-impl GetDrop {
-    pub fn respond(self) -> Result<DropResponse, StepFailure> {
+impl PlayDrop {
+    pub fn respond(self) -> Result<Node, StepFailure> {
         unimplemented!()
     }
 }
 
 #[derive(Serialize)]
-pub struct Branch {
-}
-
-#[derive(Serialize)]
-pub struct DropResponse {
+pub struct Node {
     node: Branch,
     path: String,
     #[serde(rename = "ch", flatten)]
     chapter_id: Option<String>,
+}
+
+#[derive(Serialize)]
+pub struct Branch {
+    id: String, // uci chair pair
+    ply: u32, // game.turns
+    fen: String,
+    check: bool, // situation.check
+    dests: String, // dests in the current position
+    opening: Option<&'static Opening>,
+    drops: String, // ???
+    crazy_data: String, // ???
 }
 
 #[derive(Debug)]

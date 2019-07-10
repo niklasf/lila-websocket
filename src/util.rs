@@ -39,3 +39,34 @@ where
     let visitor = SpaceSeparated(PhantomData, PhantomData);
     deserializer.deserialize_str(visitor)
 }
+
+pub fn parsable<'de, T, D>(deserializer: D) -> Result<T, D::Error>
+where
+    T: FromStr,
+    T::Err: Display,
+    D: Deserializer<'de>,
+{
+    struct Parsable<T>(PhantomData<T>);
+
+    impl<'de, T> de::Visitor<'de> for Parsable<T>
+    where
+        T: FromStr,
+        T::Err: Display,
+    {
+        type Value = T;
+
+        fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
+            f.write_str("valid string")
+        }
+
+        fn visit_str<E>(self, s: &str) -> Result<Self::Value, E>
+        where
+            E: de::Error,
+        {
+            s.parse().map_err(de::Error::custom)
+        }
+    }
+
+    let visitor = Parsable(PhantomData);
+    deserializer.deserialize_str(visitor)
+}

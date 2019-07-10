@@ -82,7 +82,7 @@ enum SocketIn<'a> {
     #[serde(rename = "stepFailure")]
     StepFailure,
     #[serde(rename = "node")]
-    Node(analysis::DropResponse),
+    Node(analysis::Node),
 }
 
 impl<'a> SocketIn<'a> {
@@ -118,8 +118,12 @@ enum SocketOut {
     },
     #[serde(rename = "anaDrop")]
     AnaDrop {
-        d: analysis::GetDrop,
+        d: analysis::PlayDrop,
     },
+    #[serde(rename = "anaMove")]
+    AnaMove {
+        d: analysis::PlayMove,
+    }
 }
 
 /// Session cookie from Play framework.
