@@ -288,9 +288,7 @@ impl UserSocket {
 
     fn on_ping(&self, lag: u32) {
         if let SocketAuth::Authenticated(ref uid) = self.auth {
-            // TODO: Wait for deploy of
-            // https://github.com/ornicar/lila/commit/3c2854b082df974141ac5818d4d02a443195d8ce
-            //self.app.publish(LilaIn::Lag(uid, lag));
+            self.app.publish(LilaIn::Lag(uid, lag));
         }
     }
 
