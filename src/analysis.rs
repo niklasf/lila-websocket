@@ -1,3 +1,4 @@
+#[derive(Deserialize)]
 struct VariantKey {
     #[serde(rename = "standard")]
     Standard,
@@ -18,7 +19,7 @@ struct VariantKey {
     #[serde(rename = "racingKings")]
     RacingKings,
     #[serde(rename = "crazyhouse")]
-    CrazyHouse,
+    Crazyhouse,
 }
 
 struct EffectiveVariantKey {
@@ -30,6 +31,18 @@ struct EffectiveVariantKey {
     Horde,
     RacingKings,
     Crazyhouse,
+}
+
+impl EffectiveVariantKey {
+    fn opening_sensible(self) -> bool {
+        match self {
+            EffectiveVariantKey::Standard |
+            EffectiveVariantKey::Crazyhouse |
+            EffectiveVariantKey::ThreeCheck |
+            EffectiveVariantKey::KingOfTheHill => true,
+            _ => false,
+        }
+    }
 }
 
 impl From<VariantKey> for EffectiveVariantKey {
@@ -48,6 +61,7 @@ impl From<VariantKey> for EffectiveVariantKey {
     }
 }
 
+#[derive(Deserialize)]
 struct GetOpening {
     variant: Option<VariantKey>,
     path: String,
