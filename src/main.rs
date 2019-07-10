@@ -52,6 +52,9 @@ struct Opt {
     /// Hard limit for maximum number of simultaneous Websocket connections
     #[structopt(long = "max-connections", default_value = "40000")]
     max_connections: usize,
+    /// How many messages to accept, per IP, per 10s
+    #[structopt(long = "rate-limiter-credits", default_value = "40")]
+    rate_limiter_credits: u32,
 }
 
 /// Messages we send to Websocket clients.
@@ -557,7 +560,7 @@ fn main() {
         let app: &'static App = Box::leak(Box::new(App::new(redis_sink, sid_sink)));
 
         let rate_limiter = KeyedRateLimiter::<IpAddr>::new(
-            NonZeroU32::new(40).unwrap(), // credits
+            NonZeroU32::new(opt.rate_limiter_credits).unwrap(), // credits
             Duration::from_secs(10)); // per
 
         // Clear connections and subscriptions from previous process.
