@@ -397,6 +397,7 @@ impl Handler for Socket {
             if watchers.is_empty() {
                 by_game.remove(&game);
                 log::debug!("no more watchers for {:?}", game);
+                self.app.publish(LilaIn::Unwatch(&game));
             }
         }
 
@@ -456,17 +457,13 @@ impl Handler for Socket {
                         }
 
                         // If cached, send current game state immediately.
-                        let was_cached = match self.app.watched_games.read().peek(&game) {
-                            Some(state) => {
-                                self.sender.send(SocketIn::Fen {
-                                    id: &game,
-                                    fen: &state.fen,
-                                    lm: &state.lm,
-                                }.to_json_string())?;
-                                true
-                            },
-                            None => false,
-                        };
+                        if let Some(state) = self.app.watched_games.read().peek(&game) {
+                            self.sender.send(SocketIn::Fen {
+                                id: &game,
+                                fen: &state.fen,
+                                lm: &state.lm,
+                            }.to_json_string())?;
+                        }
 
                         // Subscribe to updates.
                         self.app.by_game.write()
@@ -476,12 +473,8 @@ impl Handler for Socket {
                                 log::debug!("also watching {:?} ({} watchers)", game, v.len());
                             })
                             .or_insert_with(|| {
-                                if was_cached {
-                                    log::debug!("a watcher returned to {:?}", game);
-                                } else {
-                                    log::debug!("start watching: {:?}", game);
-                                    self.app.publish(LilaIn::Watch(&game));
-                                }
+                                log::debug!("start watching: {:?}", game);
+                                self.app.publish(LilaIn::Watch(&game));
                                 vec![self.sender.clone()]
                             });
                     }
