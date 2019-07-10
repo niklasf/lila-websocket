@@ -560,8 +560,8 @@ fn main() {
         let app: &'static App = Box::leak(Box::new(App::new(redis_sink, sid_sink)));
 
         let rate_limiter = KeyedRateLimiter::<IpAddr>::new(
-            NonZeroU32::new(opt.rate_limiter_credits).unwrap(), // credits
-            Duration::from_secs(10)); // per
+            NonZeroU32::new(opt.rate_limiter_credits).expect("non-zero credits"),
+            Duration::from_secs(10));
 
         // Clear connections and subscriptions from previous process.
         app.publish(LilaIn::DisconnectAll);
