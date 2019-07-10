@@ -1,8 +1,14 @@
 use serde::{Deserialize, Serialize};
 
-use shakmaty::fen::Fen;
+use shakmaty::fen::{Fen, FenOpts};
 
 use crate::opening_db::{Opening, FULL_OPENING_DB};
+
+fn lookup_opening(mut fen: Fen) -> Option<&'static Opening> {
+    fen.pockets = None;
+    fen.remaining_checks = None;
+    FULL_OPENING_DB.get(FenOpts::new().epd(&fen).as_str())
+}
 
 #[derive(Deserialize, Copy, Clone)]
 enum VariantKey {
@@ -79,11 +85,12 @@ impl GetOpening {
     pub fn respond(self) -> Option<OpeningResponse> {
         let variant = EffectiveVariantKey::from(self.variant.unwrap_or(VariantKey::Standard));
         if variant.is_opening_sensible() {
-            let epd: String = self.fen.split(' ').take(4).collect();
-            FULL_OPENING_DB.get(epd.as_str()).map(|opening| OpeningResponse {
-                path: self.path,
-                opening
-            })
+            self.fen.parse().ok()
+                .and_then(lookup_opening)
+                .map(|opening| OpeningResponse {
+                    path: self.path,
+                    opening
+                })
         } else {
             None
         }
@@ -108,12 +115,11 @@ pub struct GetDests {
 impl GetDests {
     pub fn respond(self) -> Result<DestsResponse, DestsFailure> {
         let fen: Fen = self.fen.parse().map_err(|_| DestsFailure)?;
-        let epd: String = "".to_owned(); // TODO
         let dests: String = "".to_owned(); // TODO
 
         Ok(DestsResponse {
             path: self.path,
-            opening: FULL_OPENING_DB.get(epd.as_str()),
+            opening: lookup_opening(fen),
             chapter_id: self.chapter_id,
             dests,
         })
