@@ -365,7 +365,7 @@ impl PlayMove {
                 ply: (pos.borrow().fullmoves() - 1) * 2 + pos.borrow().turn().fold(0, 1),
                 opening: lookup_opening(fen_from_setup(pos.borrow())),
             },
-            path: "".to_owned(),
+            path: self.path,
             chapter_id: self.chapter_id
         })
     }
