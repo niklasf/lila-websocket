@@ -62,7 +62,7 @@ fn dests(pos: &dyn Position) -> String {
     for from_sq in pos.us() {
         let mut from_here = legals.iter().filter(|m| m.from() == Some(from_sq)).peekable();
         if from_here.peek().is_some() {
-            if mem::replace(&mut first, false) {
+            if !mem::replace(&mut first, false) {
                 dests.push(' ');
             }
             dests.push(piotr(from_sq));
