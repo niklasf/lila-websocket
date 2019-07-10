@@ -1,5 +1,7 @@
 use serde::{Deserialize, Serialize};
 
+use shakmaty::fen::Fen;
+
 use crate::opening_db::{Opening, FULL_OPENING_DB};
 
 #[derive(Deserialize, Copy, Clone)]
@@ -93,3 +95,40 @@ pub struct OpeningResponse {
     path: String,
     opening: &'static Opening,
 }
+
+#[derive(Deserialize)]
+pub struct GetDests {
+    variant: Option<VariantKey>,
+    fen: String,
+    path: String,
+    #[serde(rename = "ch")]
+    chapter_id: Option<String>,
+}
+
+impl GetDests {
+    pub fn respond(self) -> Result<DestsResponse, DestsFailure> {
+        let fen: Fen = self.fen.parse().map_err(|_| DestsFailure)?;
+        let epd: String = "".to_owned(); // TODO
+        let dests: String = "".to_owned(); // TODO
+
+        Ok(DestsResponse {
+            path: self.path,
+            opening: FULL_OPENING_DB.get(epd.as_str()),
+            chapter_id: self.chapter_id,
+            dests,
+        })
+    }
+}
+
+#[derive(Serialize)]
+pub struct DestsResponse {
+    path: String,
+    dests: String,
+    #[serde(flatten)]
+    opening: Option<&'static Opening>,
+    #[serde(rename = "ch", flatten)]
+    chapter_id: Option<String>,
+}
+
+#[derive(Debug)]
+pub struct DestsFailure;

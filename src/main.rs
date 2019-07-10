@@ -75,6 +75,10 @@ enum SocketIn<'a> {
     MoveLatency(u32),
     #[serde(rename = "opening")]
     Opening(analysis::OpeningResponse),
+    #[serde(rename = "destsFailure")]
+    DestsFailure,
+    #[serde(rename = "dests")]
+    Dests(analysis::DestsResponse),
 }
 
 impl<'a> SocketIn<'a> {
@@ -103,6 +107,10 @@ enum SocketOut {
     #[serde(rename = "opening")]
     Opening {
         d: analysis::GetOpening,
+    },
+    #[serde(rename = "anaDests")]
+    AnalysisDests {
+        d: analysis::GetDests,
     }
 }
 
@@ -541,6 +549,12 @@ impl Handler for Socket {
                     self.sender.send(SocketIn::Opening(response).to_json_string())?;
                 }
                 Ok(())
+            }
+            Ok(SocketOut::AnalysisDests { d }) => {
+                self.sender.send(match d.respond() {
+                    Ok(res) => SocketIn::Dests(res),
+                    Err(_) => SocketIn::DestsFailure,
+                }.to_json_string())
             }
             Err(err) => {
                 log::warn!("protocol violation of client ({:?}): {}", err, msg);
