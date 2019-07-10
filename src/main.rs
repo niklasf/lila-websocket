@@ -418,8 +418,7 @@ impl Handler for Socket {
             if watchers.is_empty() {
                 by_game.remove(&game);
                 log::debug!("no more watchers for {:?}", game);
-                // TODO needs deploy:
-                //self.app.publish(LilaIn::Unwatch(&game));
+                self.app.publish(LilaIn::Unwatch(&game));
             }
         }
 
