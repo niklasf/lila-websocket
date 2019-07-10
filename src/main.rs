@@ -26,7 +26,7 @@ use smallvec::SmallVec;
 
 use std::sync::atomic::{AtomicI32, AtomicU32, Ordering};
 use once_cell::sync::OnceCell;
-use parking_lot::{RwLock, Mutex};
+use parking_lot::RwLock;
 use lru::LruCache;
 use crossbeam::channel;
 use ratelimit_meter::KeyedRateLimiter;
@@ -123,7 +123,6 @@ struct App {
     sid_sink: channel::Sender<(SocketId, SessionCookie)>,
     broadcaster: OnceCell<Sender>,
     connection_count: AtomicI32, // signed to allow relaxed writes with underflow
-    limiter: Mutex<KeyedRateLimiter<IpAddr>>,
 }
 
 struct WatchedGame {
@@ -145,7 +144,6 @@ impl App {
             connection_count: AtomicI32::new(0),
             mlat: AtomicU32::new(u32::max_value()),
             watching_mlat: RwLock::new(HashSet::new()),
-            limiter: Mutex::new(KeyedRateLimiter::new(NonZeroU32::new(40).unwrap(), Duration::from_secs(10))),
         }
     }
 
@@ -210,9 +208,6 @@ impl App {
                         log::error!("failed to send mlat: {:?}", err);
                     }
                 }
-
-                // Remove IPs not seen for 60 seconds.
-                self.limiter.lock().cleanup(Duration::from_secs(60));
             }
             LilaOut::TellFlag { flag, payload } => {
                 let watching_flag = self.flags[flag as usize].read();
@@ -231,6 +226,7 @@ impl App {
 struct Socket {
     app: &'static App,
     socket_id: SocketId,
+    rate_limiter: KeyedRateLimiter<IpAddr>,
     client_addr: Option<IpAddr>,
     user_agent: Option<String>,
     rate_limited_once: bool,
@@ -430,7 +426,7 @@ impl Handler for Socket {
 
     fn on_message(&mut self, msg: Message) -> ws::Result<()> {
         if let Some(client_addr) = self.client_addr {
-            if let Err(_) = self.app.limiter.lock().check(client_addr) {
+            if let Err(_) = self.rate_limiter.check(client_addr) {
                 if !self.rate_limited_once {
                     log::warn!("socket of client {} rate limited (will log only once)", client_addr);
                     self.rate_limited_once = true;
@@ -558,6 +554,10 @@ fn main() {
         let (sid_sink, sid_recv) = channel::unbounded();
         let app: &'static App = Box::leak(Box::new(App::new(redis_sink, sid_sink)));
 
+        let rate_limiter = KeyedRateLimiter::<IpAddr>::new(
+            NonZeroU32::new(40).unwrap(), // credits
+            Duration::from_secs(10)); // per
+
         // Clear connections and subscriptions from previous process.
         app.publish(LilaIn::DisconnectAll);
 
@@ -615,7 +615,10 @@ fn main() {
 
         // Thread for incoming messages from lila.
         let opt_inner = opt.clone();
+        let rate_limiter_inner = rate_limiter.clone();
         s.spawn(move |_| {
+            let mut rate_limiter = rate_limiter_inner;
+
             let mut redis = redis::Client::open(opt_inner.redis.as_str())
                 .expect("redis open for subscribe")
                 .get_connection()
@@ -631,7 +634,15 @@ fn main() {
                     .expect("get payload");
 
                 match LilaOut::parse(&msg) {
-                    Ok(msg) => app.received(msg),
+                    Ok(msg) => {
+                        // Abuse this message as a tick, and stop tracking
+                        // IPs not seen for 60 seconds.
+                        if let LilaOut::MoveLatency(_) = msg {
+                            rate_limiter.cleanup(Duration::from_secs(60));
+                        }
+
+                        app.received(msg);
+                    },
                     Err(_) => log::error!("invalid message from lila: {}", msg),
                 }
             }
@@ -653,6 +664,7 @@ fn main() {
                 Socket {
                     app,
                     sender,
+                    rate_limiter: rate_limiter.clone(),
                     socket_id: SocketId(socket_id),
                     client_addr: None, // set during handshake
                     user_agent: None, // set during handshake
