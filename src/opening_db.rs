@@ -1,12 +1,14 @@
+use serde::Serialize;
 use phf::phf_map;
 
-struct Opening {
+#[derive(Serialize)]
+pub struct Opening {
     eco: &'static str,
     name: &'static str,
 }
 
-// Generated from https://github.com/niklasf/eco
-static FULL_OPENING_DB: phf::Map<&'static str, Opening> = phf_map! {
+// Generated from https://github.com/niklasf/eco.
+pub static FULL_OPENING_DB: phf::Map<&'static str, Opening> = phf_map! {
     "rnbqkbnr/pppppppp/8/8/8/7N/PPPPPPPP/RNBQKB1R b KQkq -" => Opening { eco: "A00", name: "Amar (Paris) opening" },
     "rn1qkbnr/ppp2ppp/8/3p4/5p2/6PB/PPPPP2P/RNBQK2R w KQkq -" => Opening { eco: "A00", name: "Amar gambit" },
     "r1bqkb1r/ppp2ppp/2np1n2/4p3/2P5/1PN1P3/P2P1PPP/R1BQKBNR w KQkq -" => Opening { eco: "A00", name: "Amsterdam attack" },

@@ -37,6 +37,7 @@ mod model;
 mod ipc;
 mod util;
 mod opening_db;
+mod analysis;
 
 use crate::model::{Flag, GameId, UserId};
 use crate::ipc::{LilaOut, LilaIn};
@@ -72,6 +73,8 @@ enum SocketIn<'a> {
     },
     #[serde(rename = "mlat")]
     MoveLatency(u32),
+    #[serde(rename = "opening")]
+    Opening(analysis::OpeningResponse),
 }
 
 impl<'a> SocketIn<'a> {
@@ -97,6 +100,10 @@ enum SocketOut {
     MoveLatency { d: bool },
     #[serde(rename = "following_onlines")]
     FollowingOnlines,
+    #[serde(rename = "opening")]
+    Opening {
+        d: analysis::GetOpening,
+    }
 }
 
 /// Session cookie from Play framework.
@@ -529,6 +536,12 @@ impl Handler for Socket {
                 }
                 Ok(())
             },
+            Ok(SocketOut::Opening { d }) => {
+                if let Some(response) = d.respond() {
+                    self.sender.send(SocketIn::Opening(response).to_json_string())?;
+                }
+                Ok(())
+            }
             Err(err) => {
                 log::warn!("protocol violation of client ({:?}): {}", err, msg);
                 self.sender.close(CloseCode::Protocol)

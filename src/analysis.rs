@@ -1,5 +1,9 @@
-#[derive(Deserialize)]
-struct VariantKey {
+use serde::{Deserialize, Serialize};
+
+use crate::opening_db::{Opening, FULL_OPENING_DB};
+
+#[derive(Deserialize, Copy, Clone)]
+enum VariantKey {
     #[serde(rename = "standard")]
     Standard,
     #[serde(rename = "fromPosition")]
@@ -22,7 +26,8 @@ struct VariantKey {
     Crazyhouse,
 }
 
-struct EffectiveVariantKey {
+#[derive(Copy, Clone)]
+enum EffectiveVariantKey {
     Standard,
     Antichess,
     KingOfTheHill,
@@ -34,7 +39,7 @@ struct EffectiveVariantKey {
 }
 
 impl EffectiveVariantKey {
-    fn opening_sensible(self) -> bool {
+    fn is_opening_sensible(self) -> bool {
         match self {
             EffectiveVariantKey::Standard |
             EffectiveVariantKey::Crazyhouse |
@@ -62,8 +67,29 @@ impl From<VariantKey> for EffectiveVariantKey {
 }
 
 #[derive(Deserialize)]
-struct GetOpening {
+pub struct GetOpening {
     variant: Option<VariantKey>,
     path: String,
     fen: String,
+}
+
+impl GetOpening {
+    pub fn respond(self) -> Option<OpeningResponse> {
+        let variant = EffectiveVariantKey::from(self.variant.unwrap_or(VariantKey::Standard));
+        if variant.is_opening_sensible() {
+            let epd: String = self.fen.split(' ').take(4).collect();
+            FULL_OPENING_DB.get(epd.as_str()).map(|opening| OpeningResponse {
+                path: self.path,
+                opening
+            })
+        } else {
+            None
+        }
+    }
+}
+
+#[derive(Serialize)]
+pub struct OpeningResponse {
+    path: String,
+    opening: &'static Opening,
 }
