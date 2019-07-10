@@ -71,7 +71,14 @@ fn drop_role_id(role: Role) -> char {
 }
 
 fn promotion_id(file: File, role: Role) -> char {
-    (35 + 64 + (u8::from(role) - 1) * 8 + u8::from(file) - 1) as char
+    (35 + 64 + (match role {
+        Role::Queen => 0,
+        Role::Rook => 1,
+        Role::Bishop => 2,
+        Role::Knight => 3,
+        Role::King => 4,
+        Role::Pawn => 0,
+    }) * 8 + u8::from(file)) as char
 }
 
 fn piotr(sq: Square) -> char {
@@ -470,6 +477,11 @@ mod tests {
         assert_eq!(&uci_char_pair(&Uci::Normal { from: Square::A1, to: Square::B1, promotion: None }), "#$");
         assert_eq!(&uci_char_pair(&Uci::Normal { from: Square::A1, to: Square::A2, promotion: None }), "#+");
         assert_eq!(&uci_char_pair(&Uci::Normal { from: Square::H7, to: Square::H8, promotion: None }), "Zb");
+
+        // promotions
+        assert_eq!(&uci_char_pair(&Uci::Normal { from: Square::B7, to: Square::B8, promotion: Some(Role::Queen) }), "Td");
+        assert_eq!(&uci_char_pair(&Uci::Normal { from: Square::B7, to: Square::C8, promotion: Some(Role::Queen) }), "Te");
+        assert_eq!(&uci_char_pair(&Uci::Normal { from: Square::B7, to: Square::C8, promotion: Some(Role::Knight) }), "T}");
 
         // drops
         assert_eq!(&uci_char_pair(&Uci::Put { to: Square::A1, role: Role::Pawn }), "#\u{8f}");
