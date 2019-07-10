@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 
+use shakmaty::Square;
 use shakmaty::fen::{Fen, FenOpts};
 
 use crate::opening_db::{Opening, FULL_OPENING_DB};
@@ -8,6 +9,20 @@ fn lookup_opening(mut fen: Fen) -> Option<&'static Opening> {
     fen.pockets = None;
     fen.remaining_checks = None;
     FULL_OPENING_DB.get(FenOpts::new().epd(&fen).as_str())
+}
+
+fn piotr(sq: Square) -> u8 {
+    if sq < Square::C4 {
+        b'a' + u8::from(sq)
+    } else if sq < Square::E7 {
+        b'A' + (sq - Square::C4) as u8
+    } else if sq < Square::G8 {
+        b'0' + (sq - Square::E7) as u8
+    } else if sq == Square::G8 {
+        b'!'
+    } else {
+        b'?'
+    }
 }
 
 #[derive(Deserialize, Copy, Clone)]
@@ -138,3 +153,20 @@ pub struct DestsResponse {
 
 #[derive(Debug)]
 pub struct DestsFailure;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_piotr() {
+        assert_eq!(piotr(Square::A1), b'a');
+        assert_eq!(piotr(Square::B4), b'z');
+        assert_eq!(piotr(Square::C4), b'A');
+        assert_eq!(piotr(Square::D7), b'Z');
+        assert_eq!(piotr(Square::E7), b'0');
+        assert_eq!(piotr(Square::F8), b'9');
+        assert_eq!(piotr(Square::G8), b'!');
+        assert_eq!(piotr(Square::H8), b'?');
+    }
+}
