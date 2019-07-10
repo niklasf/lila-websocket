@@ -232,6 +232,7 @@ struct Socket {
     app: &'static App,
     socket_id: SocketId,
     client_addr: Option<IpAddr>,
+    user_agent: Option<String>,
     rate_limited_once: bool,
     sender: Sender,
     watching: HashSet<GameId>,
@@ -336,6 +337,11 @@ impl Handler for Socket {
 
         // Get client address.
         self.client_addr = handshake.request.client_addr()?.and_then(|ip| ip.parse().ok());
+
+        // Get user agent.
+        self.user_agent = handshake.request.header("user-agent")
+            .and_then(|h| str::from_utf8(h).ok())
+            .map(|h| h.to_owned());
 
         // Parse session cookie.
         let maybe_cookie = handshake.request.header("cookie")
@@ -455,7 +461,7 @@ impl Handler for Socket {
                     if let Ok(lag) = lag.try_into() {
                         self.app.by_id.read().get(&self.socket_id).expect("user socket").on_ping(lag);
                     } else {
-                        log::warn!("client reported negative lag: {}", lag);
+                        log::warn!("negative lag: {}, user-agent: {:?}", lag, self.user_agent);
                     }
                 }
                 self.sender.send(Message::text("0"))
@@ -649,6 +655,7 @@ fn main() {
                     sender,
                     socket_id: SocketId(socket_id),
                     client_addr: None, // set during handshake
+                    user_agent: None, // set during handshake
                     rate_limited_once: false,
                     flag: None, // set during handshake
                     watching: HashSet::new(),
