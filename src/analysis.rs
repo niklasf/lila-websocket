@@ -360,7 +360,7 @@ impl PlayMove {
                 uci: uci.to_string(),
                 id: uci_char_pair(self.orig, self.dest),
                 dests: dests(pos.borrow()),
-                check: pos.borrow().is_check(),
+                check: Some(pos.borrow().is_check()).filter(|c| *c),
                 fen: pos.fen(),
                 ply: pos.borrow().fullmoves() * 2 - pos.borrow().turn().fold(1, 0),
                 opening: lookup_opening(fen_from_setup(pos.borrow())),
@@ -404,7 +404,7 @@ pub struct Branch {
     ply: u32,
     fen: String,
     #[serde(flatten)]
-    check: bool,
+    check: Option<bool>,
     dests: String,
     opening: Option<&'static Opening>,
     //drops: String, // TODO: ???
