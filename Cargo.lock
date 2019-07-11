@@ -1242,7 +1242,7 @@ dependencies = [
 [[package]]
 name = "shakmaty"
 version = "0.14.1"
-source = "git+https://github.com/niklasf/shakmaty.git#e2127b246681fac266d443ce4f0bb3f935f58814"
+source = "git+https://github.com/niklasf/shakmaty.git#7f3af05504dbe93381d0635bcb78f8cd79d1cc73"
 dependencies = [
  "arrayvec 0.4.11 (registry+https://github.com/rust-lang/crates.io-index)",
  "bitflags 1.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
