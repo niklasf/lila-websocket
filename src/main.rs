@@ -116,15 +116,14 @@ enum SocketOut {
     AnaDests {
         d: analysis::GetDests,
     },
-    /* TODO: #[serde(rename = "anaDrop")]
-    AnaDrop {
-        d: analysis::PlayDrop,
-    }, */
     #[serde(rename = "anaMove")]
     AnaMove {
         d: analysis::PlayMove,
     },
-    // TODO: {"t":"evalGet","d":{"fen":"rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1","path":""}}
+    #[serde(rename = "anaDrop")]
+    AnaDrop {
+        d: analysis::PlayDrop,
+    },
     #[serde(rename = "evalGet")]
     EvalGet,
     #[serde(rename = "ping")]
@@ -584,17 +583,18 @@ impl Handler for Socket {
                     }
                 }.to_json_string())
             }
-            /* Ok(SocketOut::AnaDrop { d }) => {
+            Ok(SocketOut::AnaDrop { d }) => {
                 self.sender.send(match d.respond() {
                     Ok(res) => SocketIn::Node(res),
-                    Err(_) => {
+                    Err(err) => {
                         log::warn!("analysis step failure {:?}: {}", err, msg);
                         SocketIn::StepFailure
                     }
                 }.to_json_string())
-            } */
+            }
             Ok(SocketOut::EvalGet) => {
                 log::error!("TODO: implement evalGet");
+                // {"t":"evalGet","d":{"fen":"rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1","path":""}}
                 Ok(())
             }
             Ok(SocketOut::ChallengePing) => {

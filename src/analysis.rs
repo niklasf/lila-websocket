@@ -131,6 +131,20 @@ enum PromotableRole {
     King,
 }
 
+#[derive(Deserialize)]
+enum DroppableRole {
+    #[serde(rename = "pawn")]
+    Pawn,
+    #[serde(rename = "knight")]
+    Knight,
+    #[serde(rename = "bishop")]
+    Bishop,
+    #[serde(rename = "rook")]
+    Rook,
+    #[serde(rename = "queen")]
+    Queen,
+}
+
 impl From<PromotableRole> for Role {
     fn from(r: PromotableRole) -> Role {
         match r {
@@ -139,6 +153,18 @@ impl From<PromotableRole> for Role {
             PromotableRole::Rook => Role::Rook,
             PromotableRole::Queen => Role::Queen,
             PromotableRole::King => Role::King,
+        }
+    }
+}
+
+impl From<DroppableRole> for Role {
+    fn from(r: DroppableRole) -> Role {
+        match r {
+            DroppableRole::Pawn => Role::Pawn,
+            DroppableRole::Knight => Role::Knight,
+            DroppableRole::Bishop => Role::Bishop,
+            DroppableRole::Rook => Role::Rook,
+            DroppableRole::Queen => Role::Queen,
         }
     }
 }
@@ -409,21 +435,50 @@ impl PlayMove {
     }
 }
 
-/* #[derive(Deserialize)]
+#[derive(Deserialize)]
 pub struct PlayDrop {
-    //role: Role,
-    //pos: Square,
+    role: DroppableRole,
+    #[serde(deserialize_with = "util::parsable")]
+    pos: Square,
     variant: Option<VariantKey>,
     fen: String,
     path: String,
+    #[serde(rename = "ch")]
     chapter_id: Option<String>,
 }
 
 impl PlayDrop {
     pub fn respond(self) -> Result<Node, StepFailure> {
-        unimplemented!()
+        let variant = EffectiveVariantKey::from(self.variant.unwrap_or(VariantKey::Standard));
+        let fen: Fen = self.fen.parse()?;
+        let mut pos = variant.position(&fen)?;
+
+        let uci = Uci::Put {
+            to: self.pos,
+            role: self.role.into(),
+        };
+
+        let m = pos.uci_to_move(&uci)?;
+        let san = pos.clone().san_plus(&m);
+        pos.borrow_mut().play_unchecked(&m);
+
+        Ok(Node {
+            node: Branch {
+                children: Vec::new(),
+                san: san.to_string(),
+                uci: uci.to_string(),
+                id: uci_char_pair(&uci),
+                dests: dests(pos.borrow()),
+                check: pos.borrow().is_check(),
+                fen: pos.fen(),
+                ply: (pos.borrow().fullmoves() - 1) * 2 + pos.borrow().turn().fold(0, 1),
+                opening: lookup_opening(fen_from_setup(pos.borrow())),
+            },
+            path: self.path,
+            chapter_id: self.chapter_id
+        })
     }
-} */
+}
 
 #[derive(Serialize)]
 pub struct Node {
