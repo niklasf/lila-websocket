@@ -396,8 +396,9 @@ impl GetDests {
 pub struct DestsResponse {
     path: String,
     dests: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
     opening: Option<&'static Opening>,
-    #[serde(rename = "ch")]
+    #[serde(rename = "ch", skip_serializing_if = "Option::is_none")]
     chapter_id: Option<String>,
 }
 
@@ -502,7 +503,7 @@ impl PlayDrop {
 pub struct Node {
     node: Branch,
     path: String,
-    #[serde(rename = "ch")]
+    #[serde(rename = "ch", skip_serializing_if = "Option::is_none")]
     chapter_id: Option<String>,
 }
 
@@ -517,9 +518,11 @@ pub struct Branch {
     #[serde(skip_serializing_if = "util::is_false")]
     check: bool,
     dests: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
     opening: Option<&'static Opening>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     drops: Option<String>,
-    #[serde(rename = "crazyData")]
+    #[serde(rename = "crazyData", skip_serializing_if = "Option::is_none")]
     crazy_data: Option<CrazyData>,
 }
 
