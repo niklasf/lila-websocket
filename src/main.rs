@@ -123,6 +123,8 @@ enum SocketOut {
     },
     #[serde(rename = "evalGet")]
     EvalGet,
+    #[serde(rename = "evalPut")]
+    EvalPut,
     #[serde(rename = "ping")]
     ChallengePing,
 }
@@ -592,6 +594,11 @@ impl Handler for Socket {
             Ok(SocketOut::EvalGet) => {
                 log::error!("TODO: implement evalGet");
                 // {"t":"evalGet","d":{"fen":"rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1","path":""}}
+                Ok(())
+            }
+            Ok(SocketOut::EvalPut) => {
+                log::error!("TODO: implement evalPut");
+                // {"t":"evalPut","d":{"fen":"rnbqkbnr/pppppppp/8/8/2P5/8/PP1PPPPP/RNBQKBNR[] b KQkq - 0 1","knodes":8035,"depth":17,"pvs":[{"cp":-70,"moves":"e7e5 b1c3 g8f6 e2e4 f8c5 f1e2 d7d6 g1f3 b8c6 d2d3"},{"cp":-67,"moves":"b8c6 e2e4 e7e5 d2d3 f8c5 g1f3 g8f6 f1e2 d7d6 b1c3"},{"cp":-60,"moves":"g8f6 g1f3 d7d5 e2e3 b8c6 c4d5 d8d5 b1c3 d5h5 f1b5"},{"cp":-26,"moves":"e7e6 e2e4 g8f6 e4e5 f6e4 g1f3 b8c6 b1c3 e4f2 e1f2"},{"cp":48,"moves":"d7d6 g1f3 e7e5 d2d4 e5d4 f3d4 g8f6 b1c3 b8c6 d4c6"}],"variant":"crazyhouse"}}
                 Ok(())
             }
             Ok(SocketOut::ChallengePing) => {
