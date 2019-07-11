@@ -4,11 +4,12 @@ use serde::{Deserialize, Serialize};
 
 use arrayvec::ArrayString;
 
-use shakmaty::{Square, PositionError, Position, MoveList, Role, IllegalMoveError, Move, File};
+use shakmaty::{Square, PositionError, Position, MoveList, Role, IllegalMoveError, Move, File, MaterialSide, Material};
 use shakmaty::variants::{Chess, Giveaway, KingOfTheHill, ThreeCheck, Atomic, Horde, RacingKings, Crazyhouse};
 use shakmaty::fen::{Fen, FenOpts, ParseFenError};
 use shakmaty::san::SanPlus;
 use shakmaty::uci::Uci;
+use shakmaty::attacks;
 
 use crate::opening_db::{Opening, FULL_OPENING_DB};
 use crate::util;
@@ -115,6 +116,19 @@ fn dests(pos: &dyn Position) -> String {
     }
 
     dests
+}
+
+fn drops(pos: &dyn Position) -> Option<String> {
+    let checkers = pos.checkers();
+
+    if checkers.is_empty() || pos.pockets().map(|p| p.by_color(pos.turn()).count() == 0).unwrap_or(true) {
+        None
+    } else if let Some(checker) = checkers.single_square() {
+        let king = pos.board().king_of(pos.turn()).expect("king in crazyhouse");
+        Some(attacks::between(checker, king).into_iter().map(|sq| sq.to_string()).collect())
+    } else {
+        Some("".to_owned())
+    }
 }
 
 #[derive(Deserialize)]
@@ -417,10 +431,6 @@ impl PlayMove {
         let san = pos.clone().san_plus(&m);
         pos.borrow_mut().play_unchecked(&m);
 
-        if variant == EffectiveVariantKey::Crazyhouse {
-            log::error!("TODO: Implement crazyhosue");
-        }
-
         Ok(Node {
             node: Branch {
                 children: Vec::new(),
@@ -428,10 +438,12 @@ impl PlayMove {
                 uci: uci.to_string(),
                 id: uci_char_pair(&uci),
                 dests: dests(pos.borrow()),
+                drops: drops(pos.borrow()),
                 check: pos.borrow().is_check(),
                 fen: pos.fen(),
                 ply: (pos.borrow().fullmoves() - 1) * 2 + pos.borrow().turn().fold(0, 1),
                 opening: lookup_opening(fen_from_setup(pos.borrow())),
+                crazy_data: pos.borrow().pockets().map(CrazyData::from)
             },
             path: self.path,
             chapter_id: self.chapter_id
@@ -466,10 +478,6 @@ impl PlayDrop {
         let san = pos.clone().san_plus(&m);
         pos.borrow_mut().play_unchecked(&m);
 
-        if variant == EffectiveVariantKey::Crazyhouse {
-            log::error!("TODO: Implement crazyhosue");
-        }
-
         Ok(Node {
             node: Branch {
                 children: Vec::new(),
@@ -477,10 +485,12 @@ impl PlayDrop {
                 uci: uci.to_string(),
                 id: uci_char_pair(&uci),
                 dests: dests(pos.borrow()),
+                drops: drops(pos.borrow()),
                 check: pos.borrow().is_check(),
                 fen: pos.fen(),
                 ply: (pos.borrow().fullmoves() - 1) * 2 + pos.borrow().turn().fold(0, 1),
                 opening: lookup_opening(fen_from_setup(pos.borrow())),
+                crazy_data: pos.borrow().pockets().map(CrazyData::from),
             },
             path: self.path,
             chapter_id: self.chapter_id
@@ -508,8 +518,44 @@ pub struct Branch {
     check: bool,
     dests: String,
     opening: Option<&'static Opening>,
-    // TODO: drops
-    // TODO: crazyData
+    drops: Option<String>,
+    #[serde(rename = "crazyData")]
+    crazy_data: Option<CrazyData>,
+}
+
+#[derive(Serialize)]
+pub struct CrazyData {
+    pockets: [CrazyPocket; 2]
+}
+
+impl<'a> From<&'a Material> for CrazyData {
+    fn from(material: &'a Material) -> CrazyData {
+        CrazyData {
+            pockets: [(&material.white).into(), (&material.black).into()]
+        }
+    }
+}
+
+#[derive(Serialize)]
+pub struct CrazyPocket {
+    // TODO: Skip if empty
+    pawn: u8,
+    knight: u8,
+    bishop: u8,
+    rook: u8,
+    queen: u8,
+}
+
+impl<'a> From<&'a MaterialSide> for CrazyPocket {
+    fn from(side: &'a MaterialSide) -> CrazyPocket {
+        CrazyPocket {
+            pawn: side.pawns,
+            knight: side.knights,
+            bishop: side.bishops,
+            rook: side.rooks,
+            queen: side.queens,
+        }
+    }
 }
 
 #[derive(Debug)]
