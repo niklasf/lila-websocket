@@ -538,11 +538,15 @@ impl<'a> From<&'a Material> for CrazyData {
 
 #[derive(Serialize)]
 pub struct CrazyPocket {
-    // TODO: Skip if empty
+    #[serde(skip_serializing_if = "util::is_zero_u8")]
     pawn: u8,
+    #[serde(skip_serializing_if = "util::is_zero_u8")]
     knight: u8,
+    #[serde(skip_serializing_if = "util::is_zero_u8")]
     bishop: u8,
+    #[serde(skip_serializing_if = "util::is_zero_u8")]
     rook: u8,
+    #[serde(skip_serializing_if = "util::is_zero_u8")]
     queen: u8,
 }
 

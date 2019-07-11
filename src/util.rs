@@ -74,3 +74,7 @@ where
 pub fn is_false(v: &bool) -> bool {
     !*v
 }
+
+pub fn is_zero_u8(v: &u8) -> bool {
+    *v == 0
+}
