@@ -6,7 +6,7 @@ After=network.target
 LimitNOFILE=80000
 User=www-data
 Group=www-data
-Environment=RUST_LOG=lila_websocket=debug
+Environment=RUST_LOG=lila_websocket=info,ws=error
 ExecStart=/usr/local/bin/lila-websocket
 PrivateTmp=true
 PrivateDevices=true
