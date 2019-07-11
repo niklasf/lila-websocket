@@ -11,13 +11,18 @@ use shakmaty::san::SanPlus;
 use shakmaty::uci::Uci;
 use shakmaty::attacks;
 
-use crate::opening_db::{Opening, FULL_OPENING_DB};
 use crate::util;
+
+#[derive(Serialize)]
+pub struct Opening {
+    eco: &'static str,
+    name: &'static str,
+}
 
 fn lookup_opening(mut fen: Fen) -> Option<&'static Opening> {
     fen.pockets = None;
     fen.remaining_checks = None;
-    FULL_OPENING_DB.get(FenOpts::new().epd(&fen).as_str())
+    OPENING_DB.get(FenOpts::new().epd(&fen).as_str())
 }
 
 fn uci_char_pair(uci: &Uci) -> ArrayString<[u8; 3]> {
@@ -463,6 +468,8 @@ impl From<IllegalMoveError> for StepFailure {
         StepFailure::IllegalMoveError(err)
     }
 }
+
+include!(concat!(env!("OUT_DIR"), "/opening_db.rs"));
 
 #[cfg(test)]
 mod tests {

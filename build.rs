@@ -1,9 +1,11 @@
 use std::env;
 use std::io;
-use std::fs::Path;
+use std::io::{Write};
+use std::fs::File;
+use std::path::Path;
 
 fn main() -> io::Result<()> {
-    //println!("cargo:rerun-if-changed=build.rs");
+    println!("cargo:rerun-if-changed=build.rs");
 
     let out_dir = env::var("OUT_DIR").expect("got OUT_DIR");
     let dest_path = Path::new(&out_dir).join("opening_db.rs");
@@ -947,7 +949,6 @@ fn main() -> io::Result<()> {
         .entry("rnb1kbnr/ppp2p1p/8/3B2p1/4Pp1q/6P1/PPPP3P/RNBQ1KNR b kq -", r#"Opening { eco: "C33", name: "King's Gambit Accepted, bishop's gambit, Chigorin's attack" }"#)
         .entry("rnbqkb1r/pppp1ppp/5n2/8/2B1Pp2/8/PPPP2PP/RNBQK1NR w KQkq -", r#"Opening { eco: "C33", name: "King's Gambit Accepted, bishop's gambit, Cozio (Morphy) defence" }"#)
         .entry("rnb1k1nr/pppp1pbp/8/6p1/2B1P2q/2N2Qp1/PPPP3P/R1B2KNR b kq -", r#"Opening { eco: "C33", name: "King's Gambit Accepted, bishop's gambit, Fraser variation" }"#)
-        .entry("rnb1kbnr/ppp2p1p/8/3B2p1/4Pp1q/6P1/PPPP3P/RNBQ1KNR b kq -", r#"Opening { eco: "C33", name: "King's Gambit Accepted, bishop's gambit, Gifford variation" }"#)
         .entry("rnb1k1nr/pppp1ppp/8/2b5/2B1Pp1q/8/PPPP2PP/RNBQ1KNR w kq -", r#"Opening { eco: "C33", name: "King's Gambit Accepted, bishop's gambit, Greco variation" }"#)
         .entry("rnb1k1nr/ppp2pbp/3p4/4P1p1/2BP1p1q/2N5/PPP3PP/R1BQ1KNR b kq -", r#"Opening { eco: "C33", name: "King's Gambit Accepted, bishop's gambit, Grimm attack" }"#)
         .entry("rnbqkb1r/pp1p1ppp/2p2n2/8/2B1Pp2/2N5/PPPP2PP/R1BQK1NR w KQkq -", r#"Opening { eco: "C33", name: "King's Gambit Accepted, bishop's gambit, Jaenisch variation" }"#)
@@ -1094,7 +1095,6 @@ fn main() -> io::Result<()> {
         .entry("rn1q1rk1/ppp2ppp/3b4/3p4/2PPn1b1/3B1N2/PP3PPP/RNBQ1RK1 w - -", r#"Opening { eco: "C42", name: "Petrov, classical attack, Tarrasch variation" }"#)
         .entry("rnbqkb1r/ppp2ppp/3p1n2/8/3P4/5N2/PPP2PPP/RNBQKB1R w KQkq -", r#"Opening { eco: "C42", name: "Petrov, classical attack, close variation" }"#)
         .entry("rnbqkb1r/ppp2ppp/3p4/8/3Pn3/5N2/PPP2PPP/RNBQKB1R b KQkq -", r#"Opening { eco: "C42", name: "Petrov, classical attack" }"#)
-        .entry("rnbqkb1r/pppp1ppp/5n2/8/2BpP3/5N2/PPP2PPP/RNBQK2R b KQkq -", r#"Opening { eco: "C43", name: "Petrov, Urusov gambit" }"#)
         .entry("rnbqkb1r/pppp1ppp/5n2/4p3/3PP3/5N2/PPP2PPP/RNBQKB1R b KQkq -", r#"Opening { eco: "C43", name: "Petrov, modern (Steinitz) attack" }"#)
         .entry("r1bqkb1r/pppp1ppp/2n5/2n1P3/3N4/8/PPP1QPPP/RNB1KB1R w KQkq -", r#"Opening { eco: "C43", name: "Petrov, modern attack, Bardeleben variation" }"#)
         .entry("rnbqkb1r/pppp1ppp/8/4P3/3pn3/5N2/PPP1QPPP/RNB1KB1R b KQkq -", r#"Opening { eco: "C43", name: "Petrov, modern attack, Steinitz variation" }"#)
@@ -1667,7 +1667,6 @@ fn main() -> io::Result<()> {
         .entry("rnbq1rk1/pp3ppp/4p3/1B6/3PP3/5N2/P2Q1PPP/R3K2R b KQ -", r#"Opening { eco: "D41", name: "Queen's Gambit Declined, Semi-Tarrasch, Kmoch variation" }"#)
         .entry("rnb1k2r/pp3ppp/4p3/q7/1b1PP3/5N2/P2B1PPP/R2QKB1R w KQkq -", r#"Opening { eco: "D41", name: "Queen's Gambit Declined, Semi-Tarrasch, San Sebastian variation" }"#)
         .entry("r1bqkb1r/pp3ppp/2n1p3/2pn4/3P4/2NBPN2/PP3PPP/R1BQK2R b KQkq -", r#"Opening { eco: "D42", name: "Queen's Gambit Declined, Semi-Tarrasch, 7.Bd3" }"#)
-        .entry("rnb1kb1r/pp3pp1/2p1pq1p/3p4/2PP4/1QN2N2/PP2PPPP/R3KB1R b KQkq -", r#"Opening { eco: "D43", name: "Queen's Gambit Declined semi-Slav, Hastings variation" }"#)
         .entry("rnbqkb1r/pp3ppp/2p1pn2/3p4/2PP4/2N2N2/PP2PPPP/R1BQKB1R w KQkq -", r#"Opening { eco: "D43", name: "Queen's Gambit Declined semi-Slav" }"#)
         .entry("rnbqkb1r/pp3ppp/2p1pn2/6B1/2pP4/2N2N2/PP2PPPP/R2QKB1R w KQkq -", r#"Opening { eco: "D44", name: "Queen's Gambit Declined semi-Slav, 5.Bg5 dc" }"#)
         .entry("rnbqkb1r/pp3ppp/2p1pn2/6B1/2pPP3/2N2N2/PP3PPP/R2QKB1R b KQkq -", r#"Opening { eco: "D44", name: "Queen's Gambit Declined semi-Slav, Botvinnik system (anti-Meran)" }"#)
@@ -1801,7 +1800,6 @@ fn main() -> io::Result<()> {
         .entry("r2q1rk1/pp2ppbp/4b1p1/n7/3PP3/3BBP2/P3N1PP/R2Q1RK1 w - -", r#"Opening { eco: "D89", name: "Gruenfeld, Spassky variation, main line, 13.Bd3" }"#)
         .entry("r2q1rk1/pp2ppbp/4b1p1/n2P4/4P3/3BBP2/P3N1PP/R2Q1RK1 b - -", r#"Opening { eco: "D89", name: "Gruenfeld, exchange, Sokolsky variation" }"#)
         .entry("rnbqk2r/ppp1ppbp/5np1/3p4/Q1PP4/2N2N2/PP2PPPP/R1B1KB1R b KQkq -", r#"Opening { eco: "D90", name: "Gruenfeld, Flohr variation" }"#)
-        .entry("rnbqkb1r/pp2pp1p/2p2np1/3p4/2PP4/2N2N2/PP2PPPP/R1BQKB1R w KQkq -", r#"Opening { eco: "D90", name: "Gruenfeld, Schlechter variation" }"#)
         .entry("rnbqkb1r/ppp1pp1p/5np1/3p4/2PP4/2N2N2/PP2PPPP/R1BQKB1R b KQkq -", r#"Opening { eco: "D90", name: "Gruenfeld, Three knights variation" }"#)
         .entry("rnbqk2r/ppp1ppbp/5np1/3p4/2PP4/2N2N2/PP2PPPP/R1BQKB1R w KQkq -", r#"Opening { eco: "D90", name: "Gruenfeld, Three knights variation" }"#)
         .entry("rnbqk2r/ppp1ppbp/5np1/3p2B1/2PP4/2N2N2/PP2PPPP/R2QKB1R b KQkq -", r#"Opening { eco: "D91", name: "Gruenfeld, 5.Bg5" }"#)
