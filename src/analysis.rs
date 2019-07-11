@@ -370,7 +370,7 @@ impl PlayStep {
                 fen: FenOpts::default().fen(&pos),
                 ply: (pos.fullmoves() - 1) * 2 + pos.turn().fold(0, 1),
                 opening: lookup_opening(Fen::from_setup(&pos)).filter(|_| is_opening_sensible(variant)),
-                crazy_data: pos.pockets().map(CrazyData::from)
+                crazy: pos.pockets().map(CrazyData::from)
             },
             path: self.path,
             chapter_id: self.chapter_id
@@ -401,8 +401,8 @@ pub struct Branch {
     opening: Option<&'static Opening>,
     #[serde(skip_serializing_if = "Option::is_none")]
     drops: Option<String>,
-    #[serde(rename = "crazyData", skip_serializing_if = "Option::is_none")]
-    crazy_data: Option<CrazyData>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    crazy: Option<CrazyData>,
 }
 
 #[derive(Serialize)]
