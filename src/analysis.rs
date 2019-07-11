@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 
 use arrayvec::ArrayString;
 
-use shakmaty::{Square, PositionError, Position, MoveList, Role, IllegalMoveError, Move, File, MaterialSide, Material};
+use shakmaty::{Square, Color, Bitboard, Board, PositionError, Setup, Position, MoveList, Role, IllegalMoveError, Move, File, MaterialSide, Material, RemainingChecks};
 use shakmaty::variants::{Chess, Giveaway, KingOfTheHill, ThreeCheck, Atomic, Horde, RacingKings, Crazyhouse};
 use shakmaty::fen::{Fen, FenOpts, ParseFenError};
 use shakmaty::san::SanPlus;
@@ -13,19 +13,6 @@ use shakmaty::attacks;
 
 use crate::opening_db::{Opening, FULL_OPENING_DB};
 use crate::util;
-
-fn fen_from_setup(setup: &dyn Position) -> Fen {
-    Fen {
-        board: setup.board().clone(),
-        pockets: setup.pockets().cloned(),
-        turn: setup.turn(),
-        castling_rights: setup.castling_rights(),
-        ep_square: setup.ep_square(),
-        remaining_checks: setup.remaining_checks().cloned(),
-        halfmoves: setup.halfmoves(),
-        fullmoves: setup.fullmoves(),
-    }
-}
 
 fn lookup_opening(mut fen: Fen) -> Option<&'static Opening> {
     fen.pockets = None;
@@ -299,19 +286,6 @@ impl VariantPosition {
         }
     }
 
-    fn fen(&self) -> String {
-        match *self {
-            VariantPosition::Standard(ref pos) => FenOpts::default().fen(pos),
-            VariantPosition::Antichess(ref pos) => FenOpts::default().fen(pos),
-            VariantPosition::KingOfTheHill(ref pos) => FenOpts::default().fen(pos),
-            VariantPosition::ThreeCheck(ref pos) => FenOpts::default().fen(pos),
-            VariantPosition::Atomic(ref pos) => FenOpts::default().fen(pos),
-            VariantPosition::Horde(ref pos) => FenOpts::default().fen(pos),
-            VariantPosition::RacingKings(ref pos) => FenOpts::default().fen(pos),
-            VariantPosition::Crazyhouse(ref pos) => FenOpts::default().fen(pos),
-        }
-    }
-
     fn uci_to_move(&self, uci: &Uci) -> Result<Move, IllegalMoveError> {
         match *self {
             VariantPosition::Standard(ref pos) => uci.to_move(pos),
@@ -337,6 +311,17 @@ impl VariantPosition {
             VariantPosition::Crazyhouse(pos) => SanPlus::from_move(pos, m),
         }
     }
+}
+
+impl Setup for VariantPosition {
+    fn board(&self) -> &Board { self.borrow().board() }
+    fn turn(&self) -> Color { self.borrow().turn() }
+    fn pockets(&self) -> Option<&Material> { self.borrow().pockets() }
+    fn castling_rights(&self) -> Bitboard { self.borrow().castling_rights() }
+    fn ep_square(&self) -> Option<Square> { self.borrow().ep_square() }
+    fn remaining_checks(&self) -> Option<&RemainingChecks> { self.borrow().remaining_checks() }
+    fn halfmoves(&self) -> u32 { self.borrow().halfmoves() }
+    fn fullmoves(&self) -> u32 { self.borrow().fullmoves() }
 }
 
 #[derive(Deserialize)]
@@ -486,10 +471,10 @@ impl PlayStep {
                 dests: dests(pos.borrow()),
                 drops: drops(pos.borrow()),
                 check: pos.borrow().is_check(),
-                fen: pos.fen(),
-                ply: (pos.borrow().fullmoves() - 1) * 2 + pos.borrow().turn().fold(0, 1),
-                opening: lookup_opening(fen_from_setup(pos.borrow())),
-                crazy_data: pos.borrow().pockets().map(CrazyData::from)
+                fen: FenOpts::default().fen(&pos),
+                ply: (pos.fullmoves() - 1) * 2 + pos.turn().fold(0, 1),
+                opening: lookup_opening(Fen::from_setup(&pos)),
+                crazy_data: pos.pockets().map(CrazyData::from)
             },
             path: self.path,
             chapter_id: self.chapter_id
