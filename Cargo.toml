@@ -10,6 +10,7 @@ readme = "README.md"
 authors = ["Niklas Fiekas <niklas.fiekas@backscattering.de>"]
 edition = "2018"
 publish = false
+build = "build.rs"
 
 [dependencies]
 cookie = "0.12"
@@ -31,7 +32,7 @@ lru = "0.1"
 arrayvec = { version = "0.4", features = ["serde-1"] }
 smallvec = "0.6"
 ratelimit_meter = "4.1"
-phf = { version = "0.7", features = ["macros"] }
+phf = "0.7"
 shakmaty = { git = "https://github.com/niklasf/shakmaty.git", branch = "master" }
 
 [build-dependencies]

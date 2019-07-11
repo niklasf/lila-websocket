@@ -3,7 +3,7 @@ use std::io;
 use std::fs::Path;
 
 fn main() -> io::Result<()> {
-    println!("cargo:rerun-if-changed=build.rs");
+    //println!("cargo:rerun-if-changed=build.rs");
 
     let out_dir = env::var("OUT_DIR").expect("got OUT_DIR");
     let dest_path = Path::new(&out_dir).join("opening_db.rs");

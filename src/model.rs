@@ -116,3 +116,9 @@ impl FromStr for Flag {
         })
     }
 }
+
+/// An opening with name and ECO code.
+pub struct Opening {
+    eco: &'static str,
+    name: &'static str,
+}
