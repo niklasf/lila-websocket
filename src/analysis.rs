@@ -334,16 +334,13 @@ pub struct GetOpening {
 impl GetOpening {
     pub fn respond(self) -> Option<OpeningResponse> {
         let variant = Variant::from(self.variant.unwrap_or(VariantKey::Standard));
-        if variant.is_opening_sensible() {
-            self.fen.parse().ok()
-                .and_then(lookup_opening)
-                .map(|opening| OpeningResponse {
-                    path: self.path,
-                    opening
-                })
-        } else {
-            None
-        }
+        self.fen.parse().ok()
+            .filter(|_| variant.is_opening_sensible())
+            .and_then(lookup_opening)
+            .map(|opening| OpeningResponse {
+                path: self.path,
+                opening
+            })
     }
 }
 
@@ -370,7 +367,7 @@ impl GetDests {
 
         Ok(DestsResponse {
             path: self.path,
-            opening: lookup_opening(fen),
+            opening: lookup_opening(fen).filter(|_| variant.is_opening_sensible()),
             chapter_id: self.chapter_id,
             dests: dests(pos.borrow()),
         })
@@ -473,7 +470,7 @@ impl PlayStep {
                 check: pos.borrow().is_check(),
                 fen: FenOpts::default().fen(&pos),
                 ply: (pos.fullmoves() - 1) * 2 + pos.turn().fold(0, 1),
-                opening: lookup_opening(Fen::from_setup(&pos)),
+                opening: lookup_opening(Fen::from_setup(&pos)).filter(|_| variant.is_opening_sensible()),
                 crazy_data: pos.pockets().map(CrazyData::from)
             },
             path: self.path,
