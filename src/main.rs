@@ -575,7 +575,7 @@ impl Handler for Socket {
                 }.to_json_string())
             }
             Ok(SocketOut::AnaMove { d }) => {
-                self.sender.send(match d.respond() {
+                self.sender.send(match analysis::PlayStep::from(d).respond() {
                     Ok(res) => SocketIn::Node(res),
                     Err(err) => {
                         log::warn!("analysis step failure {:?}: {}", err, msg);
@@ -584,7 +584,7 @@ impl Handler for Socket {
                 }.to_json_string())
             }
             Ok(SocketOut::AnaDrop { d }) => {
-                self.sender.send(match d.respond() {
+                self.sender.send(match analysis::PlayStep::from(d).respond() {
                     Ok(res) => SocketIn::Node(res),
                     Err(err) => {
                         log::warn!("analysis step failure {:?}: {}", err, msg);

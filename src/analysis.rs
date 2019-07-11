@@ -416,42 +416,6 @@ pub struct PlayMove {
     chapter_id: Option<String>,
 }
 
-impl PlayMove {
-    pub fn respond(self) -> Result<Node, StepFailure> {
-        let variant = EffectiveVariantKey::from(self.variant.unwrap_or(VariantKey::Standard));
-        let fen: Fen = self.fen.parse()?;
-        let mut pos = variant.position(&fen)?;
-
-        let uci = Uci::Normal {
-            from: self.orig,
-            to: self.dest,
-            promotion: self.promotion.map(|r| r.into()),
-        };
-
-        let m = pos.uci_to_move(&uci)?;
-        let san = pos.clone().san_plus(&m);
-        pos.borrow_mut().play_unchecked(&m);
-
-        Ok(Node {
-            node: Branch {
-                children: Vec::new(),
-                san: san.to_string(),
-                uci: uci.to_string(),
-                id: uci_char_pair(&uci),
-                dests: dests(pos.borrow()),
-                drops: drops(pos.borrow()),
-                check: pos.borrow().is_check(),
-                fen: pos.fen(),
-                ply: (pos.borrow().fullmoves() - 1) * 2 + pos.borrow().turn().fold(0, 1),
-                opening: lookup_opening(fen_from_setup(pos.borrow())),
-                crazy_data: pos.borrow().pockets().map(CrazyData::from)
-            },
-            path: self.path,
-            chapter_id: self.chapter_id
-        })
-    }
-}
-
 #[derive(Deserialize)]
 pub struct PlayDrop {
     role: DroppableRole,
@@ -464,18 +428,52 @@ pub struct PlayDrop {
     chapter_id: Option<String>,
 }
 
-impl PlayDrop {
+pub struct PlayStep {
+    uci: Uci,
+    variant: Option<VariantKey>,
+    fen: String,
+    path: String,
+    chapter_id: Option<String>,
+}
+
+impl From<PlayMove> for PlayStep {
+    fn from(d: PlayMove) -> PlayStep {
+        PlayStep {
+            uci: Uci::Normal {
+                from: d.orig,
+                to: d.dest,
+                promotion: d.promotion.map(Role::from),
+            },
+            variant: d.variant,
+            fen: d.fen,
+            path: d.path,
+            chapter_id: d.chapter_id,
+        }
+    }
+}
+
+impl From<PlayDrop> for PlayStep {
+    fn from(d: PlayDrop) -> PlayStep {
+        PlayStep {
+            uci: Uci::Put {
+                to: d.pos,
+                role: d.role.into(),
+            },
+            variant: d.variant,
+            fen: d.fen,
+            path: d.path,
+            chapter_id: d.chapter_id,
+        }
+    }
+}
+
+impl PlayStep {
     pub fn respond(self) -> Result<Node, StepFailure> {
         let variant = EffectiveVariantKey::from(self.variant.unwrap_or(VariantKey::Standard));
         let fen: Fen = self.fen.parse()?;
         let mut pos = variant.position(&fen)?;
 
-        let uci = Uci::Put {
-            to: self.pos,
-            role: self.role.into(),
-        };
-
-        let m = pos.uci_to_move(&uci)?;
+        let m = pos.uci_to_move(&self.uci)?;
         let san = pos.clone().san_plus(&m);
         pos.borrow_mut().play_unchecked(&m);
 
@@ -483,15 +481,15 @@ impl PlayDrop {
             node: Branch {
                 children: Vec::new(),
                 san: san.to_string(),
-                uci: uci.to_string(),
-                id: uci_char_pair(&uci),
+                uci: self.uci.to_string(),
+                id: uci_char_pair(&self.uci),
                 dests: dests(pos.borrow()),
                 drops: drops(pos.borrow()),
                 check: pos.borrow().is_check(),
                 fen: pos.fen(),
                 ply: (pos.borrow().fullmoves() - 1) * 2 + pos.borrow().turn().fold(0, 1),
                 opening: lookup_opening(fen_from_setup(pos.borrow())),
-                crazy_data: pos.borrow().pockets().map(CrazyData::from),
+                crazy_data: pos.borrow().pockets().map(CrazyData::from)
             },
             path: self.path,
             chapter_id: self.chapter_id
