@@ -351,8 +351,7 @@ impl PlayStep {
         let mut pos = VariantPosition::from_setup(variant, &fen)?;
 
         let m = self.uci.to_move(&pos)?;
-        let san = SanPlus::from_move(pos.clone(), &m);
-        pos.play_unchecked(&m);
+        let san = SanPlus::from_move_and_play_unchecked(&mut pos, &m);
 
         Ok(Node {
             node: Branch {
