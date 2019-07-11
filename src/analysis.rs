@@ -193,7 +193,7 @@ enum VariantKey {
     Crazyhouse,
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, PartialEq, Eq)]
 enum EffectiveVariantKey {
     Standard,
     Antichess,
@@ -417,6 +417,10 @@ impl PlayMove {
         let san = pos.clone().san_plus(&m);
         pos.borrow_mut().play_unchecked(&m);
 
+        if variant == EffectiveVariantKey::Crazyhouse {
+            log::error!("TODO: Implement crazyhosue");
+        }
+
         Ok(Node {
             node: Branch {
                 children: Vec::new(),
@@ -461,6 +465,10 @@ impl PlayDrop {
         let m = pos.uci_to_move(&uci)?;
         let san = pos.clone().san_plus(&m);
         pos.borrow_mut().play_unchecked(&m);
+
+        if variant == EffectiveVariantKey::Crazyhouse {
+            log::error!("TODO: Implement crazyhosue");
+        }
 
         Ok(Node {
             node: Branch {
