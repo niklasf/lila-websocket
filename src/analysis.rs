@@ -208,7 +208,7 @@ enum VariantKey {
 }
 
 #[derive(Copy, Clone, PartialEq, Eq)]
-enum EffectiveVariantKey {
+enum Variant {
     Standard,
     Antichess,
     KingOfTheHill,
@@ -219,43 +219,43 @@ enum EffectiveVariantKey {
     Crazyhouse,
 }
 
-impl EffectiveVariantKey {
+impl Variant {
     fn is_opening_sensible(self) -> bool {
         match self {
-            EffectiveVariantKey::Standard |
-            EffectiveVariantKey::Crazyhouse |
-            EffectiveVariantKey::ThreeCheck |
-            EffectiveVariantKey::KingOfTheHill => true,
+            Variant::Standard |
+            Variant::Crazyhouse |
+            Variant::ThreeCheck |
+            Variant::KingOfTheHill => true,
             _ => false,
         }
     }
 
     fn position(self, fen: &Fen) -> Result<VariantPosition, PositionError> {
         match self {
-            EffectiveVariantKey::Standard => fen.position().map(VariantPosition::Standard),
-            EffectiveVariantKey::Antichess => fen.position().map(VariantPosition::Antichess),
-            EffectiveVariantKey::KingOfTheHill => fen.position().map(VariantPosition::KingOfTheHill),
-            EffectiveVariantKey::ThreeCheck => fen.position().map(VariantPosition::ThreeCheck),
-            EffectiveVariantKey::Atomic => fen.position().map(VariantPosition::Atomic),
-            EffectiveVariantKey::Horde => fen.position().map(VariantPosition::Horde),
-            EffectiveVariantKey::RacingKings => fen.position().map(VariantPosition::RacingKings),
-            EffectiveVariantKey::Crazyhouse => fen.position().map(VariantPosition::Crazyhouse),
+            Variant::Standard => fen.position().map(VariantPosition::Standard),
+            Variant::Antichess => fen.position().map(VariantPosition::Antichess),
+            Variant::KingOfTheHill => fen.position().map(VariantPosition::KingOfTheHill),
+            Variant::ThreeCheck => fen.position().map(VariantPosition::ThreeCheck),
+            Variant::Atomic => fen.position().map(VariantPosition::Atomic),
+            Variant::Horde => fen.position().map(VariantPosition::Horde),
+            Variant::RacingKings => fen.position().map(VariantPosition::RacingKings),
+            Variant::Crazyhouse => fen.position().map(VariantPosition::Crazyhouse),
         }
     }
 }
 
-impl From<VariantKey> for EffectiveVariantKey {
-    fn from(variant: VariantKey) -> EffectiveVariantKey {
+impl From<VariantKey> for Variant {
+    fn from(variant: VariantKey) -> Variant {
         match variant {
             VariantKey::Standard | VariantKey::FromPosition | VariantKey::Chess960 =>
-                EffectiveVariantKey::Standard,
-            VariantKey::Antichess => EffectiveVariantKey::Antichess,
-            VariantKey::KingOfTheHill => EffectiveVariantKey::KingOfTheHill,
-            VariantKey::ThreeCheck => EffectiveVariantKey::ThreeCheck,
-            VariantKey::Atomic => EffectiveVariantKey::Atomic,
-            VariantKey::Horde => EffectiveVariantKey::Horde,
-            VariantKey::RacingKings => EffectiveVariantKey::RacingKings,
-            VariantKey::Crazyhouse => EffectiveVariantKey::Crazyhouse,
+                Variant::Standard,
+            VariantKey::Antichess => Variant::Antichess,
+            VariantKey::KingOfTheHill => Variant::KingOfTheHill,
+            VariantKey::ThreeCheck => Variant::ThreeCheck,
+            VariantKey::Atomic => Variant::Atomic,
+            VariantKey::Horde => Variant::Horde,
+            VariantKey::RacingKings => Variant::RacingKings,
+            VariantKey::Crazyhouse => Variant::Crazyhouse,
         }
     }
 }
@@ -348,7 +348,7 @@ pub struct GetOpening {
 
 impl GetOpening {
     pub fn respond(self) -> Option<OpeningResponse> {
-        let variant = EffectiveVariantKey::from(self.variant.unwrap_or(VariantKey::Standard));
+        let variant = Variant::from(self.variant.unwrap_or(VariantKey::Standard));
         if variant.is_opening_sensible() {
             self.fen.parse().ok()
                 .and_then(lookup_opening)
@@ -379,7 +379,7 @@ pub struct GetDests {
 
 impl GetDests {
     pub fn respond(self) -> Result<DestsResponse, StepFailure> {
-        let variant = EffectiveVariantKey::from(self.variant.unwrap_or(VariantKey::Standard));
+        let variant = Variant::from(self.variant.unwrap_or(VariantKey::Standard));
         let fen: Fen = self.fen.parse()?;
         let pos = variant.position(&fen)?;
 
@@ -469,7 +469,7 @@ impl From<PlayDrop> for PlayStep {
 
 impl PlayStep {
     pub fn respond(self) -> Result<Node, StepFailure> {
-        let variant = EffectiveVariantKey::from(self.variant.unwrap_or(VariantKey::Standard));
+        let variant = Variant::from(self.variant.unwrap_or(VariantKey::Standard));
         let fen: Fen = self.fen.parse()?;
         let mut pos = variant.position(&fen)?;
 
