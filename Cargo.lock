@@ -526,6 +526,7 @@ dependencies = [
  "once_cell 0.2.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "parking_lot 0.8.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "phf 0.7.24 (registry+https://github.com/rust-lang/crates.io-index)",
+ "phf_codegen 0.7.24 (registry+https://github.com/rust-lang/crates.io-index)",
  "ratelimit_meter 4.1.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "redis 0.10.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "serde 1.0.94 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -833,6 +834,15 @@ version = "0.7.24"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 dependencies = [
  "phf_macros 0.7.24 (registry+https://github.com/rust-lang/crates.io-index)",
+ "phf_shared 0.7.24 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
+name = "phf_codegen"
+version = "0.7.24"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+dependencies = [
+ "phf_generator 0.7.24 (registry+https://github.com/rust-lang/crates.io-index)",
  "phf_shared 0.7.24 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
@@ -1699,6 +1709,7 @@ dependencies = [
 "checksum pbkdf2 0.2.3 (registry+https://github.com/rust-lang/crates.io-index)" = "0c09cddfbfc98de7f76931acf44460972edb4023eb14d0c6d4018800e552d8e0"
 "checksum percent-encoding 1.0.1 (registry+https://github.com/rust-lang/crates.io-index)" = "31010dd2e1ac33d5b46a5b413495239882813e0369f8ed8a5e266f173602f831"
 "checksum phf 0.7.24 (registry+https://github.com/rust-lang/crates.io-index)" = "b3da44b85f8e8dfaec21adae67f95d93244b2ecf6ad2a692320598dcc8e6dd18"
+"checksum phf_codegen 0.7.24 (registry+https://github.com/rust-lang/crates.io-index)" = "b03e85129e324ad4166b06b2c7491ae27fe3ec353af72e72cd1654c7225d517e"
 "checksum phf_generator 0.7.24 (registry+https://github.com/rust-lang/crates.io-index)" = "09364cc93c159b8b06b1f4dd8a4398984503483891b0c26b867cf431fb132662"
 "checksum phf_macros 0.7.24 (registry+https://github.com/rust-lang/crates.io-index)" = "bdb45e833315153371697760dad1831da99ce41884162320305e4f123ca3fe37"
 "checksum phf_shared 0.7.24 (registry+https://github.com/rust-lang/crates.io-index)" = "234f71a15de2288bcb7e3b6515828d22af7ec8598ee6d24c3b526fa0a80b67a0"

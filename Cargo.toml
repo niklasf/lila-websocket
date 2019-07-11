@@ -33,3 +33,6 @@ smallvec = "0.6"
 ratelimit_meter = "4.1"
 phf = { version = "0.7", features = ["macros"] }
 shakmaty = { git = "https://github.com/niklasf/shakmaty.git", branch = "master" }
+
+[build-dependencies]
+phf_codegen = "0.7"
