@@ -570,8 +570,8 @@ impl Handler for Socket {
             Ok(SocketOut::AnaDests { d }) => {
                 self.sender.send(match d.respond() {
                     Ok(res) => SocketIn::Dests(res),
-                    Err(_) => {
-                        log::warn!("analysis dests failure: {}", msg);
+                    Err(err) => {
+                        log::warn!("analysis dests failure {:?}: {}", err, msg);
                         SocketIn::DestsFailure
                     },
                 }.to_json_string())
@@ -580,7 +580,7 @@ impl Handler for Socket {
                 self.sender.send(match d.respond() {
                     Ok(res) => SocketIn::Node(res),
                     Err(err) => {
-                        log::warn!("step failure {:?}: {}", err, msg);
+                        log::warn!("analysis step failure {:?}: {}", err, msg);
                         SocketIn::StepFailure
                     }
                 }.to_json_string())
@@ -589,7 +589,7 @@ impl Handler for Socket {
                 self.sender.send(match d.respond() {
                     Ok(res) => SocketIn::Node(res),
                     Err(_) => {
-                        log::warn!("step failure {:?}: {}", err, msg);
+                        log::warn!("analysis step failure {:?}: {}", err, msg);
                         SocketIn::StepFailure
                     }
                 }.to_json_string())

@@ -338,10 +338,10 @@ pub struct GetDests {
 }
 
 impl GetDests {
-    pub fn respond(self) -> Result<DestsResponse, DestsFailure> {
+    pub fn respond(self) -> Result<DestsResponse, StepFailure> {
         let variant = EffectiveVariantKey::from(self.variant.unwrap_or(VariantKey::Standard));
-        let fen: Fen = self.fen.parse().map_err(|_| DestsFailure)?;
-        let pos = variant.position(&fen).map_err(|_| DestsFailure)?;
+        let fen: Fen = self.fen.parse()?;
+        let pos = variant.position(&fen)?;
 
         Ok(DestsResponse {
             path: self.path,
@@ -360,9 +360,6 @@ pub struct DestsResponse {
     #[serde(rename = "ch")]
     chapter_id: Option<String>,
 }
-
-#[derive(Debug)]
-pub struct DestsFailure;
 
 #[derive(Deserialize)]
 pub struct PlayMove {
