@@ -579,8 +579,8 @@ impl Handler for Socket {
             Ok(SocketOut::AnaMove { d }) => {
                 self.sender.send(match d.respond() {
                     Ok(res) => SocketIn::Node(res),
-                    Err(_) => {
-                        log::warn!("step failure (drop): {}", msg);
+                    Err(err) => {
+                        log::warn!("step failure {:?}: {}", err, msg);
                         SocketIn::StepFailure
                     }
                 }.to_json_string())
@@ -589,7 +589,7 @@ impl Handler for Socket {
                 self.sender.send(match d.respond() {
                     Ok(res) => SocketIn::Node(res),
                     Err(_) => {
-                        log::warn!("step failure (drop): {}", msg);
+                        log::warn!("step failure {:?}: {}", err, msg);
                         SocketIn::StepFailure
                     }
                 }.to_json_string())

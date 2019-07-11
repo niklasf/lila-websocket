@@ -6,7 +6,7 @@ use arrayvec::ArrayString;
 
 use shakmaty::{Square, PositionError, Position, MoveList, Role, IllegalMoveError, Move, File};
 use shakmaty::variants::{Chess, Giveaway, KingOfTheHill, ThreeCheck, Atomic, Horde, RacingKings, Crazyhouse};
-use shakmaty::fen::{Fen, FenOpts};
+use shakmaty::fen::{Fen, FenOpts, ParseFenError};
 use shakmaty::san::SanPlus;
 use shakmaty::uci::Uci;
 
@@ -381,8 +381,8 @@ pub struct PlayMove {
 impl PlayMove {
     pub fn respond(self) -> Result<Node, StepFailure> {
         let variant = EffectiveVariantKey::from(self.variant.unwrap_or(VariantKey::Standard));
-        let fen: Fen = self.fen.parse().map_err(|_| StepFailure)?;
-        let mut pos = variant.position(&fen).map_err(|_| StepFailure)?;
+        let fen: Fen = self.fen.parse()?;
+        let mut pos = variant.position(&fen)?;
 
         let uci = Uci::Normal {
             from: self.orig,
@@ -390,7 +390,7 @@ impl PlayMove {
             promotion: self.promotion.map(|r| r.into()),
         };
 
-        let m = pos.uci_to_move(&uci).map_err(|_| StepFailure)?;
+        let m = pos.uci_to_move(&uci)?;
         let san = pos.clone().san_plus(&m);
         pos.borrow_mut().play_unchecked(&m);
 
@@ -453,7 +453,29 @@ pub struct Branch {
 }
 
 #[derive(Debug)]
-pub struct StepFailure;
+pub enum StepFailure {
+    ParseFenError(ParseFenError),
+    PositionError(PositionError),
+    IllegalMoveError(IllegalMoveError),
+}
+
+impl From<ParseFenError> for StepFailure {
+    fn from(err: ParseFenError) -> StepFailure {
+        StepFailure::ParseFenError(err)
+    }
+}
+
+impl From<PositionError> for StepFailure {
+    fn from(err: PositionError) -> StepFailure {
+        StepFailure::PositionError(err)
+    }
+}
+
+impl From<IllegalMoveError> for StepFailure {
+    fn from(err: IllegalMoveError) -> StepFailure {
+        StepFailure::IllegalMoveError(err)
+    }
+}
 
 #[cfg(test)]
 mod tests {
