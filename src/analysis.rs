@@ -4,8 +4,8 @@ use serde::{Deserialize, Serialize};
 
 use arrayvec::ArrayString;
 
-use shakmaty::{Square, Color, Bitboard, Board, PositionError, Setup, Position, MoveList, Role, IllegalMoveError, Move, File, MaterialSide, Material, RemainingChecks};
-use shakmaty::variants::{Chess, Giveaway, KingOfTheHill, ThreeCheck, Atomic, Horde, RacingKings, Crazyhouse};
+use shakmaty::{Square, PositionError, Setup, Position, MoveList, Role, IllegalMoveError, File, MaterialSide, Material};
+use shakmaty::variants::{Variant, VariantPosition};
 use shakmaty::fen::{Fen, FenOpts, ParseFenError};
 use shakmaty::san::SanPlus;
 use shakmaty::uci::Uci;
@@ -83,7 +83,7 @@ fn piotr(sq: Square) -> char {
     }
 }
 
-fn dests(pos: &dyn Position) -> String {
+fn dests(pos: &VariantPosition) -> String {
     let mut legals = MoveList::new();
     pos.legal_moves(&mut legals);
 
@@ -105,7 +105,7 @@ fn dests(pos: &dyn Position) -> String {
     dests
 }
 
-fn drops(pos: &dyn Position) -> Option<String> {
+fn drops(pos: &VariantPosition) -> Option<String> {
     let checkers = pos.checkers();
 
     if checkers.is_empty() || pos.pockets().map(|p| p.by_color(pos.turn()).count() == 0).unwrap_or(true) {
@@ -194,49 +194,11 @@ enum VariantKey {
     Crazyhouse,
 }
 
-#[derive(Copy, Clone, PartialEq, Eq)]
-enum Variant {
-    Standard,
-    Antichess,
-    KingOfTheHill,
-    ThreeCheck,
-    Atomic,
-    Horde,
-    RacingKings,
-    Crazyhouse,
-}
-
-impl Variant {
-    fn is_opening_sensible(self) -> bool {
-        match self {
-            Variant::Standard |
-            Variant::Crazyhouse |
-            Variant::ThreeCheck |
-            Variant::KingOfTheHill => true,
-            _ => false,
-        }
-    }
-
-    fn position(self, fen: &Fen) -> Result<VariantPosition, PositionError> {
-        match self {
-            Variant::Standard => fen.position().map(VariantPosition::Standard),
-            Variant::Antichess => fen.position().map(VariantPosition::Antichess),
-            Variant::KingOfTheHill => fen.position().map(VariantPosition::KingOfTheHill),
-            Variant::ThreeCheck => fen.position().map(VariantPosition::ThreeCheck),
-            Variant::Atomic => fen.position().map(VariantPosition::Atomic),
-            Variant::Horde => fen.position().map(VariantPosition::Horde),
-            Variant::RacingKings => fen.position().map(VariantPosition::RacingKings),
-            Variant::Crazyhouse => fen.position().map(VariantPosition::Crazyhouse),
-        }
-    }
-}
-
 impl From<VariantKey> for Variant {
     fn from(variant: VariantKey) -> Variant {
         match variant {
-            VariantKey::Standard | VariantKey::FromPosition | VariantKey::Chess960 =>
-                Variant::Standard,
-            VariantKey::Antichess => Variant::Antichess,
+            VariantKey::Standard | VariantKey::FromPosition | VariantKey::Chess960 => Variant::Chess,
+            VariantKey::Antichess => Variant::Giveaway,
             VariantKey::KingOfTheHill => Variant::KingOfTheHill,
             VariantKey::ThreeCheck => Variant::ThreeCheck,
             VariantKey::Atomic => Variant::Atomic,
@@ -247,81 +209,11 @@ impl From<VariantKey> for Variant {
     }
 }
 
-#[derive(Clone)]
-enum VariantPosition {
-    Standard(Chess),
-    Antichess(Giveaway),
-    KingOfTheHill(KingOfTheHill),
-    ThreeCheck(ThreeCheck),
-    Atomic(Atomic),
-    Horde(Horde),
-    RacingKings(RacingKings),
-    Crazyhouse(Crazyhouse),
-}
-
-impl VariantPosition {
-    fn borrow(&self) -> &dyn Position {
-        match *self {
-            VariantPosition::Standard(ref pos) => pos,
-            VariantPosition::Antichess(ref pos) => pos,
-            VariantPosition::KingOfTheHill(ref pos) => pos,
-            VariantPosition::ThreeCheck(ref pos) => pos,
-            VariantPosition::Atomic(ref pos) => pos,
-            VariantPosition::Horde(ref pos) => pos,
-            VariantPosition::RacingKings(ref pos) => pos,
-            VariantPosition::Crazyhouse(ref pos) => pos,
-        }
+fn is_opening_sensible(variant: Variant) -> bool {
+    match variant {
+        Variant::Chess | Variant::Crazyhouse | Variant::ThreeCheck | Variant::KingOfTheHill => true,
+        _ => false,
     }
-
-    fn borrow_mut(&mut self) -> &mut dyn Position {
-        match *self {
-            VariantPosition::Standard(ref mut pos) => pos,
-            VariantPosition::Antichess(ref mut pos) => pos,
-            VariantPosition::KingOfTheHill(ref mut pos) => pos,
-            VariantPosition::ThreeCheck(ref mut pos) => pos,
-            VariantPosition::Atomic(ref mut pos) => pos,
-            VariantPosition::Horde(ref mut pos) => pos,
-            VariantPosition::RacingKings(ref mut pos) => pos,
-            VariantPosition::Crazyhouse(ref mut pos) => pos,
-        }
-    }
-
-    fn uci_to_move(&self, uci: &Uci) -> Result<Move, IllegalMoveError> {
-        match *self {
-            VariantPosition::Standard(ref pos) => uci.to_move(pos),
-            VariantPosition::Antichess(ref pos) => uci.to_move(pos),
-            VariantPosition::KingOfTheHill(ref pos) => uci.to_move(pos),
-            VariantPosition::ThreeCheck(ref pos) => uci.to_move(pos),
-            VariantPosition::Atomic(ref pos) => uci.to_move(pos),
-            VariantPosition::Horde(ref pos) => uci.to_move(pos),
-            VariantPosition::RacingKings(ref pos) => uci.to_move(pos),
-            VariantPosition::Crazyhouse(ref pos) => uci.to_move(pos),
-        }
-    }
-
-    fn san_plus(self, m: &Move) -> SanPlus {
-        match self {
-            VariantPosition::Standard(pos) => SanPlus::from_move(pos, m),
-            VariantPosition::Antichess(pos) => SanPlus::from_move(pos, m),
-            VariantPosition::KingOfTheHill(pos) => SanPlus::from_move(pos, m),
-            VariantPosition::ThreeCheck(pos) => SanPlus::from_move(pos, m),
-            VariantPosition::Atomic(pos) => SanPlus::from_move(pos, m),
-            VariantPosition::Horde(pos) => SanPlus::from_move(pos, m),
-            VariantPosition::RacingKings(pos) => SanPlus::from_move(pos, m),
-            VariantPosition::Crazyhouse(pos) => SanPlus::from_move(pos, m),
-        }
-    }
-}
-
-impl Setup for VariantPosition {
-    fn board(&self) -> &Board { self.borrow().board() }
-    fn turn(&self) -> Color { self.borrow().turn() }
-    fn pockets(&self) -> Option<&Material> { self.borrow().pockets() }
-    fn castling_rights(&self) -> Bitboard { self.borrow().castling_rights() }
-    fn ep_square(&self) -> Option<Square> { self.borrow().ep_square() }
-    fn remaining_checks(&self) -> Option<&RemainingChecks> { self.borrow().remaining_checks() }
-    fn halfmoves(&self) -> u32 { self.borrow().halfmoves() }
-    fn fullmoves(&self) -> u32 { self.borrow().fullmoves() }
 }
 
 #[derive(Deserialize)]
@@ -335,7 +227,7 @@ impl GetOpening {
     pub fn respond(self) -> Option<OpeningResponse> {
         let variant = Variant::from(self.variant.unwrap_or(VariantKey::Standard));
         self.fen.parse().ok()
-            .filter(|_| variant.is_opening_sensible())
+            .filter(|_| is_opening_sensible(variant))
             .and_then(lookup_opening)
             .map(|opening| OpeningResponse {
                 path: self.path,
@@ -363,13 +255,14 @@ impl GetDests {
     pub fn respond(self) -> Result<DestsResponse, StepFailure> {
         let variant = Variant::from(self.variant.unwrap_or(VariantKey::Standard));
         let fen: Fen = self.fen.parse()?;
-        let pos = variant.position(&fen)?;
+        let pos = VariantPosition::from_setup(variant, &fen)?;
 
         Ok(DestsResponse {
             path: self.path,
-            opening: lookup_opening(fen).filter(|_| variant.is_opening_sensible()),
+            opening: lookup_opening(fen).filter(|_| is_opening_sensible(variant)),
             chapter_id: self.chapter_id,
-            dests: dests(pos.borrow()),
+            dests: dests(&pos),
+            drops: drops(&pos),
         })
     }
 }
@@ -378,6 +271,8 @@ impl GetDests {
 pub struct DestsResponse {
     path: String,
     dests: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    drops: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     opening: Option<&'static Opening>,
     #[serde(rename = "ch", skip_serializing_if = "Option::is_none")]
@@ -453,11 +348,11 @@ impl PlayStep {
     pub fn respond(self) -> Result<Node, StepFailure> {
         let variant = Variant::from(self.variant.unwrap_or(VariantKey::Standard));
         let fen: Fen = self.fen.parse()?;
-        let mut pos = variant.position(&fen)?;
+        let mut pos = VariantPosition::from_setup(variant, &fen)?;
 
-        let m = pos.uci_to_move(&self.uci)?;
-        let san = pos.clone().san_plus(&m);
-        pos.borrow_mut().play_unchecked(&m);
+        let m = self.uci.to_move(&pos)?;
+        let san = SanPlus::from_move(pos.clone(), &m);
+        pos.play_unchecked(&m);
 
         Ok(Node {
             node: Branch {
@@ -465,12 +360,12 @@ impl PlayStep {
                 san: san.to_string(),
                 uci: self.uci.to_string(),
                 id: uci_char_pair(&self.uci),
-                dests: dests(pos.borrow()),
-                drops: drops(pos.borrow()),
-                check: pos.borrow().is_check(),
+                dests: dests(&pos),
+                drops: drops(&pos),
+                check: pos.is_check(),
                 fen: FenOpts::default().fen(&pos),
                 ply: (pos.fullmoves() - 1) * 2 + pos.turn().fold(0, 1),
-                opening: lookup_opening(Fen::from_setup(&pos)).filter(|_| variant.is_opening_sensible()),
+                opening: lookup_opening(Fen::from_setup(&pos)).filter(|_| is_opening_sensible(variant)),
                 crazy_data: pos.pockets().map(CrazyData::from)
             },
             path: self.path,
