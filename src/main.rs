@@ -700,7 +700,7 @@ fn main() {
                 log::trace!("site-in: {}", msg);
                 let ret: u32 = redis.publish("site-in", msg).expect("publish site-in");
                 if ret == 0 {
-                    log::error!("lila missed as message");
+                    log::error!("lila missed a message");
                 }
             }
         });
