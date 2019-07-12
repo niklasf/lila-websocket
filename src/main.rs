@@ -389,7 +389,7 @@ impl Handler for Socket {
             .and_then(|h| Cookie::parse(h).ok())
             .and_then(|c| {
                 let s = c.value();
-                let idx = s.find('-').map(|n| n + 1).unwrap_or(0);
+                let idx = s.find('-').map_or(0, |n| n + 1);
                 serde_urlencoded::from_str::<SessionCookie>(&s[idx..]).ok()
             });
 

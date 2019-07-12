@@ -113,7 +113,7 @@ fn dests(pos: &VariantPosition) -> String {
 fn drops(pos: &VariantPosition) -> Option<String> {
     let checkers = pos.checkers();
 
-    if checkers.is_empty() || pos.pockets().map(|p| p.by_color(pos.turn()).count() == 0).unwrap_or(true) {
+    if checkers.is_empty() || pos.pockets().map_or(true, |p| p.by_color(pos.turn()).is_empty()) {
         None
     } else if let Some(checker) = checkers.single_square() {
         let king = pos.board().king_of(pos.turn()).expect("king in crazyhouse");
