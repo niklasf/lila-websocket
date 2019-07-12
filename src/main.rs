@@ -36,7 +36,7 @@ mod ipc;
 mod util;
 mod analysis;
 
-use crate::model::{Flag, GameId, UserId};
+use crate::model::{Flag, GameId, Sri, UserId};
 use crate::ipc::{LilaOut, LilaIn};
 
 #[derive(StructOpt, Clone)]
@@ -140,6 +140,7 @@ struct SessionCookie {
 #[derive(Deserialize, Debug)]
 struct QueryString {
     flag: Option<Flag>,
+    sri: Sri,
 }
 
 /// Timeout that's used to close Websockets after some time of inactivity.
@@ -150,6 +151,7 @@ const IDLE_TIMEOUT_MS: u64 = 15_000;
 struct App {
     by_user: RwLock<HashMap::<UserId, Vec<Sender>>>,
     by_game: RwLock<HashMap::<GameId, Vec<Sender>>>,
+    by_sri: RwLock<HashMap::<Sri, Vec<Sender>>>,
     by_id: RwLock<HashMap::<SocketId, UserSocket>>,
     watched_games: RwLock<LruCache<GameId, WatchedGame>>,
     flags: [RwLock<HashSet<Sender>>; 2],
@@ -171,6 +173,7 @@ impl App {
         App {
             by_user: RwLock::new(HashMap::new()),
             by_game: RwLock::new(HashMap::new()),
+            by_sri: RwLock::new(HashMap::new()),
             by_id: RwLock::new(HashMap::new()),
             watched_games: RwLock::new(LruCache::new(5_000)),
             flags: [RwLock::new(HashSet::new()), RwLock::new(HashSet::new())],
@@ -254,6 +257,15 @@ impl App {
                     }
                 }
             }
+            LilaOut::TellSri { sri, payload } => {
+                if let Some(entry) = self.by_sri.read().get(&sri) {
+                    for sender in entry {
+                        if let Err(err) = sender.send(payload) {
+                            log::error!("failed to send to sri: {:?}", err);
+                        }
+                    }
+                }
+            }
         }
     }
 }
@@ -269,6 +281,7 @@ struct Socket {
     sender: Sender,
     watching: HashSet<GameId>,
     flag: Option<Flag>,
+    sri: Option<Sri>,
     idle_timeout: Option<Timeout>,
 }
 
@@ -407,17 +420,27 @@ impl Handler for Socket {
             self.app.sid_sink.send((self.socket_id, cookie)).expect("auth request");
         }
 
-        // Subscribe to flag.
-        let path = handshake.request.resource();
-        if let Some(qs_idx) = path.find('?') {
-            let qs = &path[qs_idx..];
-            match serde_urlencoded::from_str::<QueryString>(qs) {
-                Ok(QueryString { flag: Some(flag) }) => {
-                    self.app.flags[flag as usize].write().insert(self.sender.clone());
-                    self.flag = Some(flag);
+        // Parse query string.
+        let mut uri = handshake.request.resource().splitn(2, '?');
+        if let (_, Some(query_string)) = (uri.next().unwrap(), uri.next()) {
+            match serde_urlencoded::from_str::<QueryString>(query_string) {
+                Ok(QueryString { flag, sri }) => {
+                    // Subscribe to flag.
+                    self.flag = flag;
+                    if let Some(flag) = flag {
+                        self.app.flags[flag as usize].write().insert(self.sender.clone());
+                    }
+
+                    // Add sri.
+                    self.sri = Some(sri.clone());
+                    self.app.by_sri.write()
+                        .entry(sri)
+                        .and_modify(|v| v.push(self.sender.clone()))
+                        .or_insert_with(|| vec![self.sender.clone()]);
                 },
-                Ok(_) => (),
-                Err(err) => log::warn!("invalid query string ({:?}): {}", err, qs),
+                Err(err) => {
+                    log::warn!("invalid query string ({:?}): {}", err, query_string);
+                }
             }
         }
 
@@ -434,6 +457,18 @@ impl Handler for Socket {
         if let Some(timeout) = self.idle_timeout.take() {
             if let Err(err) = self.sender.cancel(timeout) {
                 log::error!("failed to clear timeout: {:?}", err);
+            }
+        }
+
+        // Update by_sri.
+        if let Some(sri) = self.sri.take() {
+            let mut by_sri = self.app.by_sri.write();
+            let senders = by_sri.get_mut(&sri).expect("sri in by_sri");
+            let our_token = self.sender.token();
+            let idx = senders.iter().position(|s| s.token() == our_token).expect("sender in senders");
+            senders.swap_remove(idx);
+            if senders.is_empty() {
+                by_sri.remove(&sri);
             }
         }
 
@@ -753,6 +788,7 @@ fn main() {
                     client_addr: None, // set during handshake
                     user_agent: None, // set during handshake
                     rate_limited_once: false,
+                    sri: None, // set during handshake
                     flag: None, // set during handshake
                     watching: HashSet::new(),
                     idle_timeout: None, // set during handshake

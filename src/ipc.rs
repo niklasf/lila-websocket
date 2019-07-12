@@ -2,7 +2,7 @@ use std::fmt;
 
 use smallvec::SmallVec;
 
-use crate::model::{Flag, GameId, UserId, InvalidUserId};
+use crate::model::{Flag, GameId, Sri, UserId, InvalidUserId};
 
 #[derive(Debug)]
 pub struct IpcError;
@@ -26,6 +26,10 @@ pub enum LilaOut<'a> {
         flag: Flag,
         payload: &'a str,
     },
+    TellSri {
+        sri: Sri,
+        payload: &'a str,
+    },
     MoveLatency(u32),
 }
 
@@ -36,7 +40,7 @@ impl<'a> LilaOut<'a> {
             ("move", Some(args)) => {
                 let mut args = args.splitn(3, ' ');
                 LilaOut::Move {
-                    game: args.next().ok_or(IpcError)?.parse().map_err(|_| IpcError)?,
+                    game: args.next().unwrap().parse().map_err(|_| IpcError)?,
                     last_uci: args.next().ok_or(IpcError)?,
                     fen: args.next().ok_or(IpcError)?,
                 }
@@ -56,6 +60,13 @@ impl<'a> LilaOut<'a> {
                 let mut args = args.splitn(2, ' ');
                 LilaOut::TellFlag {
                     flag: args.next().ok_or(IpcError)?.parse().map_err(|_| IpcError)?,
+                    payload: args.next().ok_or(IpcError)?,
+                }
+            },
+            ("tell/sri", Some(args)) => {
+                let mut args = args.splitn(2, ' ');
+                LilaOut::TellSri {
+                    sri: args.next().unwrap().parse().map_err(|_| IpcError)?,
                     payload: args.next().ok_or(IpcError)?,
                 }
             },
@@ -79,6 +90,7 @@ pub enum LilaIn<'a> {
     Connections(u32),
     Lag(&'a UserId, u32),
     Friends(&'a UserId),
+    TellSri(&'a Sri, Option<&'a UserId>, &'a str),
 }
 
 impl<'a> fmt::Display for LilaIn<'a> {
@@ -93,6 +105,8 @@ impl<'a> fmt::Display for LilaIn<'a> {
             LilaIn::Connections(n) => write!(f, "connections {}", n),
             LilaIn::Lag(uid, lag) => write!(f, "lag {} {}", uid, lag),
             LilaIn::Friends(uid) => write!(f, "friends {}", uid),
+            LilaIn::TellSri(sri, uid, payload) =>
+                write!(f, "tell/sri {} {} {}", sri, uid.map_or("-", |u| u.as_str()), payload),
         }
     }
 }

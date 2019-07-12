@@ -72,6 +72,10 @@ impl UserId {
             Err(InvalidUserId)
         }
     }
+
+    pub fn as_str(&self) -> &str {
+        self.0.as_str()
+    }
 }
 
 impl Serialize for UserId {
@@ -88,6 +92,45 @@ impl<'de> Deserialize<'de> for UserId {
 }
 
 impl fmt::Display for UserId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+/// Uniquely identifies a page view. The sri stays the same across reconnects
+/// on the same page, but changes when navigating to a different page.
+#[derive(Debug, Clone, Eq, PartialEq, Hash)]
+pub struct Sri(ArrayString<[u8; 12]>);
+
+#[derive(Debug)]
+pub struct InvalidSri;
+
+impl Sri {
+    pub fn new(inner: ArrayString<[u8; 12]>) -> Result<Sri, InvalidSri> {
+        if inner.chars().all(|c| c != ' ') {
+            Ok(Sri(inner))
+        } else {
+            Err(InvalidSri)
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for Sri {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let inner = ArrayString::deserialize(deserializer)?;
+        Sri::new(inner).map_err(|_| serde::de::Error::custom("invalid sri"))
+    }
+}
+
+impl FromStr for Sri {
+    type Err = InvalidSri;
+
+    fn from_str(s: &str) -> Result<Sri, InvalidSri> {
+        Sri::new(ArrayString::from(s).map_err(|_| InvalidSri)?)
+    }
+}
+
+impl fmt::Display for Sri {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.0.fmt(f)
     }
