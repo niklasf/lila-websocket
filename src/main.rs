@@ -266,6 +266,20 @@ impl App {
                     }
                 }
             }
+            LilaOut::DisconnectUser { uid } => {
+                let senders = {
+                    let by_user = self.by_user.read();
+                    let senders = by_user.get(&uid);
+                    senders.cloned()
+                };
+                if let Some(senders) = senders {
+                    for sender in senders {
+                        if let Err(err) = sender.close(CloseCode::Normal) {
+                            log::error!("failed to disconnect user: {:?}", err);
+                        }
+                    }
+                }
+            }
         }
     }
 }

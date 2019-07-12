@@ -30,6 +30,9 @@ pub enum LilaOut<'a> {
         sri: Sri,
         payload: &'a str,
     },
+    DisconnectUser {
+        uid: UserId,
+    },
     MoveLatency(u32),
 }
 
@@ -70,6 +73,11 @@ impl<'a> LilaOut<'a> {
                     payload: args.next().ok_or(IpcError)?,
                 }
             },
+            ("disconnect/user", Some(uid)) => {
+                LilaOut::DisconnectUser {
+                    uid: UserId::new(uid).map_err(|_| IpcError)?,
+                }
+            }
             ("mlat", Some(value)) => {
                 LilaOut::MoveLatency(value.parse().map_err(|_| IpcError)?)
             },
