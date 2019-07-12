@@ -79,7 +79,7 @@ enum SocketIn<'a> {
     #[serde(rename = "stepFailure")]
     StepFailure,
     #[serde(rename = "node")]
-    Node(analysis::Node),
+    Node(Box<analysis::Node>),
 }
 
 impl<'a> SocketIn<'a> {
@@ -417,8 +417,7 @@ impl Handler for Socket {
             .and_then(|h| {
                 h.split(';')
                     .map(|p| p.trim())
-                    .filter(|p| p.starts_with("lila2="))
-                    .next()
+                    .find(|p| p.starts_with("lila2="))
             })
             .and_then(|h| Cookie::parse(h).ok())
             .and_then(|c| {
@@ -519,7 +518,7 @@ impl Handler for Socket {
 
     fn on_message(&mut self, msg: Message) -> ws::Result<()> {
         if let Some(client_addr) = self.client_addr {
-            if let Err(_) = self.rate_limiter.check(client_addr) {
+            if self.rate_limiter.check(client_addr).is_err() {
                 if !self.rate_limited_once {
                     log::warn!("socket of client {} rate limited (will log only once)", client_addr);
                     self.rate_limited_once = true;
@@ -631,7 +630,7 @@ impl Handler for Socket {
             }
             Ok(SocketOut::AnaMove { d }) => {
                 self.sender.send(match analysis::PlayStep::from(d).respond() {
-                    Ok(res) => SocketIn::Node(res),
+                    Ok(res) => SocketIn::Node(Box::new(res)),
                     Err(err) => {
                         log::warn!("analysis step failure {:?}: {}", err, msg);
                         SocketIn::StepFailure
@@ -640,7 +639,7 @@ impl Handler for Socket {
             }
             Ok(SocketOut::AnaDrop { d }) => {
                 self.sender.send(match analysis::PlayStep::from(d).respond() {
-                    Ok(res) => SocketIn::Node(res),
+                    Ok(res) => SocketIn::Node(Box::new(res)),
                     Err(err) => {
                         log::warn!("analysis step failure {:?}: {}", err, msg);
                         SocketIn::StepFailure

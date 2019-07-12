@@ -71,10 +71,12 @@ where
     deserializer.deserialize_str(visitor)
 }
 
+#[allow(clippy::trivially_copy_pass_by_ref)]
 pub fn is_false(v: &bool) -> bool {
     !*v
 }
 
+#[allow(clippy::trivially_copy_pass_by_ref)]
 pub fn is_zero_u8(v: &u8) -> bool {
     *v == 0
 }
