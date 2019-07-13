@@ -36,4 +36,5 @@ phf = "0.7"
 shakmaty = "0.15"
 
 [build-dependencies]
+csv = "1.1"
 phf_codegen = "0.7"
