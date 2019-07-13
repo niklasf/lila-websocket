@@ -702,7 +702,7 @@ fn main() {
 
         // Thread for outgoing messages to lila.
         let opt_inner = opt.clone();
-        s.spawn(move |_| {
+        s.builder().name("redis sink".to_owned()).spawn(move |_| {
             let redis = redis::Client::open(opt_inner.redis.as_str())
                 .expect("redis open for publish")
                 .get_connection()
@@ -716,11 +716,11 @@ fn main() {
                     log::error!("lila missed a message");
                 }
             }
-        });
+        }).unwrap();
 
         // Thread for session id lookups.
         let opt_inner = opt.clone();
-        s.spawn(move |_| {
+        s.builder().name("session lookup".to_owned()).spawn(move |_| {
             let session_store = mongodb::Client::with_uri(opt_inner.mongodb.as_str())
                 .expect("mongodb connect")
                 .db("lichess")
@@ -750,12 +750,12 @@ fn main() {
                     user_socket.set_user(maybe_uid);
                 }
             }
-        });
+        }).unwrap();
 
         // Thread for incoming messages from lila.
         let opt_inner = opt.clone();
         let rate_limiter_inner = rate_limiter.clone();
-        s.spawn(move |_| {
+        s.builder().name("redis source".to_owned()).spawn(move |_| {
             let mut rate_limiter = rate_limiter_inner;
 
             let mut redis = redis::Client::open(opt_inner.redis.as_str())
@@ -785,7 +785,7 @@ fn main() {
                     Err(_) => log::error!("invalid message from lila: {}", msg),
                 }
             }
-        });
+        }).unwrap();
 
         // Start websocket server.
         let mut settings = ws::Settings::default();
