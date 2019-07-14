@@ -34,7 +34,6 @@ smallvec = "0.6"
 ratelimit_meter = "4.1"
 phf = "0.7"
 shakmaty = "0.15"
-chashmap = "2.2"
 
 [build-dependencies]
 csv = "1.1"
