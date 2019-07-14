@@ -21,7 +21,7 @@ use std::convert::TryInto;
 use std::net::IpAddr;
 use std::num::NonZeroU32;
 use std::time::Duration;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use smallvec::SmallVec;
 
 use std::sync::atomic::{AtomicI32, AtomicU32, Ordering};
@@ -153,7 +153,7 @@ struct App {
     by_user: CHashMap<UserId, Vec<Sender>>,
     by_game: CHashMap<GameId, Vec<Sender>>,
     by_sri: CHashMap<Sri, Vec<Sender>>,
-    by_id: CHashMap<SocketId, UserSocket>,
+    by_id: RwLock<HashMap::<SocketId, UserSocket>>,
     watched_games: RwLock<LruCache<GameId, WatchedGame>>,
     flags: [RwLock<HashSet<Sender>>; 2], // TODO: lock contention
     mlat: AtomicU32,
@@ -175,7 +175,7 @@ impl App {
             by_user: CHashMap::new(),
             by_game: CHashMap::new(),
             by_sri: CHashMap::new(),
-            by_id: CHashMap::new(),
+            by_id: RwLock::new(HashMap::new()),
             watched_games: RwLock::new(LruCache::new(5_000)),
             flags: [RwLock::new(HashSet::new()), RwLock::new(HashSet::new())],
             redis_sink,
@@ -423,7 +423,7 @@ impl Handler for Socket {
             });
 
         // Update by_id.
-        self.app.by_id.insert_new(self.socket_id, UserSocket {
+        self.app.by_id.write().insert(self.socket_id, UserSocket {
             app: self.app,
             auth: if maybe_cookie.is_some() { SocketAuth::Requested } else { SocketAuth::Anonymous },
             pending_notified: false,
@@ -485,7 +485,7 @@ impl Handler for Socket {
         }
 
         // Update by_id.
-        let mut user_socket = self.app.by_id.remove(&self.socket_id).expect("user socket");
+        let mut user_socket = self.app.by_id.write().remove(&self.socket_id).expect("user socket");
         user_socket.set_user(None);
 
         // Update by_game.
@@ -543,7 +543,7 @@ impl Handler for Socket {
             Ok(SocketOut::Ping { l }) => {
                 if let Some(lag) = l {
                     if let Ok(lag) = lag.try_into() {
-                        self.app.by_id.get(&self.socket_id).expect("user socket").on_ping(lag);
+                        self.app.by_id.read().get(&self.socket_id).expect("user socket").on_ping(lag);
                     } else {
                         log::warn!("negative lag: {}, user-agent: {:?}", lag, self.user_agent);
                     }
@@ -551,13 +551,17 @@ impl Handler for Socket {
                 self.sender.send(Message::text("0"))
             }
             Ok(SocketOut::Notified) => {
-                let mut write_guard = self.app.by_id.get_mut(&self.socket_id).expect("user socket");
-                write_guard.on_notified();
+                let mut write_guard = self.app.by_id.write();
+                write_guard.get_mut(&self.socket_id)
+                    .expect("user socket")
+                    .on_notified();
                 Ok(())
             }
             Ok(SocketOut::FollowingOnlines) => {
-                let mut write_guard = self.app.by_id.get_mut(&self.socket_id).expect("user socket");
-                write_guard.on_following_onlines();
+                let mut write_guard = self.app.by_id.write();
+                write_guard.get_mut(&self.socket_id)
+                    .expect("user socket")
+                    .on_following_onlines();
                 Ok(())
             }
             Ok(SocketOut::StartWatching { d }) => {
@@ -637,8 +641,9 @@ impl Handler for Socket {
             }
             Ok(SocketOut::EvalGet) | Ok(SocketOut::EvalPut) => {
                 if let Some(ref sri) = self.sri {
-                    let read_guard = self.app.by_id.get(&self.socket_id).expect("user socket");
-                    self.app.publish(LilaIn::TellSri(sri, read_guard.user_id(), msg));
+                    let by_id = self.app.by_id.read();
+                    let uid = by_id.get(&self.socket_id).expect("user socket").user_id();
+                    self.app.publish(LilaIn::TellSri(sri, uid, msg));
                 } else {
                     log::warn!("sri required for: {}", msg);
                 }
@@ -733,8 +738,8 @@ fn main() {
                     },
                 };
 
-                let write_guard = app.by_id.get_mut(&socket_id);
-                if let Some(mut user_socket) = write_guard {
+                let mut write_guard = app.by_id.write();
+                if let Some(user_socket) = write_guard.get_mut(&socket_id) {
                     user_socket.set_user(maybe_uid);
                 }
             }
