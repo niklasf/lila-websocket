@@ -151,7 +151,7 @@ const IDLE_TIMEOUT_MS: u64 = 15_000;
 /// Shared state of this Websocket server.
 struct App {
     by_user: CHashMap<UserId, Vec<Sender>>,
-    by_game: RwLock<HashMap::<GameId, Vec<Sender>>>,
+    by_game: CHashMap<GameId, Vec<Sender>>,
     by_sri: RwLock<HashMap::<Sri, Vec<Sender>>>,
     by_id: RwLock<HashMap::<SocketId, UserSocket>>,
     watched_games: RwLock<LruCache<GameId, WatchedGame>>,
@@ -173,7 +173,7 @@ impl App {
     fn new(redis_sink: channel::Sender<String>, sid_sink: channel::Sender<(SocketId, SessionCookie)>) -> App {
         App {
             by_user: CHashMap::new(),
-            by_game: RwLock::new(HashMap::new()),
+            by_game: CHashMap::new(),
             by_sri: RwLock::new(HashMap::new()),
             by_id: RwLock::new(HashMap::new()),
             watched_games: RwLock::new(LruCache::new(5_000)),
@@ -216,15 +216,14 @@ impl App {
                     lm: last_uci.to_owned()
                 });
 
-                let by_game = self.by_game.read();
-                if let Some(entry) = by_game.get(&game) {
+                if let Some(entry) = self.by_game.get(&game) {
                     let msg = Message::text(SocketIn::Fen {
                         id: &game,
                         fen,
                         lm: last_uci,
                     }.to_json_string());
 
-                    for sender in entry {
+                    for sender in entry.iter() {
                         if let Err(err) = sender.send(msg.clone()) {
                             log::error!("failed to send fen: {:?}", err);
                         }
@@ -494,18 +493,22 @@ impl Handler for Socket {
         user_socket.set_user(None);
 
         // Update by_game.
-        let mut by_game = self.app.by_game.write();
-        let our_token = self.sender.token();
-        for game in self.watching.drain() {
-            let watchers = by_game.get_mut(&game).expect("game in by_game");
-            let idx = watchers.iter().position(|s| s.token() == our_token).expect("sender in watchers");
-            watchers.swap_remove(idx);
-            if watchers.is_empty() {
-                by_game.remove(&game);
-                log::debug!("no more watchers for {:?}", game);
-                self.app.publish(LilaIn::Unwatch(&game));
-            }
+        for game in self.watching.iter() {
+            self.app.by_game.alter(game.clone(), |maybe_watchers| {
+                let mut watchers = maybe_watchers.expect("game in by_game");
+                let idx = watchers.iter().position(|s| s.token() == self.sender.token()).expect("sender in watchers");
+                watchers.swap_remove(idx);
+
+                if watchers.is_empty() {
+                    log::debug!("no more watchers for {:?}", game);
+                    self.app.publish(LilaIn::Unwatch(&game));
+                    None
+                } else {
+                    Some(watchers)
+                }
+            });
         }
+        self.watching.clear();
 
         // Unsubscribe from flag.
         if let Some(flag) = self.flag.take() {
@@ -582,17 +585,14 @@ impl Handler for Socket {
                         }
 
                         // Subscribe to updates.
-                        self.app.by_game.write()
-                            .entry(game.clone())
-                            .and_modify(|v| {
-                                v.push(self.sender.clone());
-                                log::debug!("also watching {:?} ({} watchers)", game, v.len());
-                            })
-                            .or_insert_with(|| {
-                                log::debug!("start watching: {:?}", game);
-                                self.app.publish(LilaIn::Watch(&game));
-                                vec![self.sender.clone()]
-                            });
+                        self.app.by_game.upsert(game.clone(), || {
+                            log::debug!("start watching: {:?}", game);
+                            self.app.publish(LilaIn::Watch(&game));
+                            vec![self.sender.clone()]
+                        }, |entry| {
+                            entry.push(self.sender.clone());
+                            log::debug!("also watching {:?} ({} watchers)", game, entry.len());
+                        });
                     }
                 }
                 Ok(())
