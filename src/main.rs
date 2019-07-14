@@ -30,6 +30,7 @@ use parking_lot::RwLock;
 use lru::LruCache;
 use crossbeam::channel;
 use ratelimit_meter::KeyedRateLimiter;
+use chashmap::CHashMap;
 
 mod model;
 mod ipc;
@@ -149,7 +150,7 @@ const IDLE_TIMEOUT_MS: u64 = 15_000;
 
 /// Shared state of this Websocket server.
 struct App {
-    by_user: RwLock<HashMap::<UserId, Vec<Sender>>>,
+    by_user: CHashMap<UserId, Vec<Sender>>,
     by_game: RwLock<HashMap::<GameId, Vec<Sender>>>,
     by_sri: RwLock<HashMap::<Sri, Vec<Sender>>>,
     by_id: RwLock<HashMap::<SocketId, UserSocket>>,
@@ -171,7 +172,7 @@ struct WatchedGame {
 impl App {
     fn new(redis_sink: channel::Sender<String>, sid_sink: channel::Sender<(SocketId, SessionCookie)>) -> App {
         App {
-            by_user: RwLock::new(HashMap::new()),
+            by_user: CHashMap::new(),
             by_game: RwLock::new(HashMap::new()),
             by_sri: RwLock::new(HashMap::new()),
             by_id: RwLock::new(HashMap::new()),
@@ -193,10 +194,9 @@ impl App {
     fn received(&self, msg: LilaOut) {
         match msg {
             LilaOut::TellUsers { users, payload } => {
-                let by_user = self.by_user.read();
                 for user in users {
-                    if let Some(entry) = by_user.get(&user) {
-                        for sender in entry {
+                    if let Some(entry) = self.by_user.get(&user) {
+                        for sender in entry.iter() {
                             if let Err(err) = sender.send(Message::text(payload.to_string())) {
                                 log::error!("failed to tell {}: {:?}", user, err);
                             }
@@ -268,15 +268,11 @@ impl App {
             }
             LilaOut::DisconnectUser { uid } => {
                 let senders = {
-                    let by_user = self.by_user.read();
-                    let senders = by_user.get(&uid);
-                    senders.cloned()
+                    self.by_user.get(&uid).map_or(Vec::new(), |v| v.clone())
                 };
-                if let Some(senders) = senders {
-                    for sender in senders {
-                        if let Err(err) = sender.close(CloseCode::Normal) {
-                            log::error!("failed to disconnect user: {:?}", err);
-                        }
+                for sender in senders {
+                    if let Err(err) = sender.close(CloseCode::Normal) {
+                        log::error!("failed to disconnect user: {:?}", err);
                     }
                 }
             }
@@ -323,15 +319,13 @@ impl UserSocket {
         // Connected.
         let auth = match maybe_uid {
             Some(uid) => {
-                self.app.by_user.write()
-                    .entry(uid.clone())
-                    .and_modify(|v| v.push(self.sender.clone()))
-                    .or_insert_with(|| {
-                        log::debug!("first open: {}", uid);
-                        self.app.publish(LilaIn::Connect(&uid));
-                        vec![self.sender.clone()]
-                    });
-
+                self.app.by_user.upsert(uid.clone(), || {
+                    log::debug!("first open: {}", uid);
+                    self.app.publish(LilaIn::Connect(&uid));
+                    vec![self.sender.clone()]
+                }, |entry| {
+                    entry.push(self.sender.clone());
+                });
                 SocketAuth::Authenticated(uid)
             },
             None => SocketAuth::Anonymous,
@@ -340,17 +334,20 @@ impl UserSocket {
         match mem::replace(&mut self.auth, auth) {
             // Disconnected.
             SocketAuth::Authenticated(uid) => {
-                let mut by_user = self.app.by_user.write();
-                let entry = by_user.get_mut(&uid).expect("uid in by_user");
-                let idx = entry.iter().position(|s| s.token() == self.sender.token()).expect("sender in by_user entry");
-                entry.swap_remove(idx);
+                self.app.by_user.alter(uid.clone(), |maybe_entry| {
+                    let mut entry = maybe_entry.expect("uid in by_user");
+                    let idx = entry.iter().position(|s| s.token() == self.sender.token()).expect("sender in by_user entry");
+                    entry.swap_remove(idx);
 
-                // Last remaining connection closed.
-                if entry.is_empty() {
-                    by_user.remove(&uid);
-                    log::debug!("last close: {}", uid);
-                    self.app.publish(LilaIn::Disconnect(&uid));
-                }
+                    if entry.is_empty() {
+                        // Last remaining connection closed.
+                        log::debug!("last close: {}", uid);
+                        self.app.publish(LilaIn::Disconnect(&uid));
+                        None
+                    } else {
+                        Some(entry)
+                    }
+                });
             },
             // Authentication request finished.
             SocketAuth::Requested => {
