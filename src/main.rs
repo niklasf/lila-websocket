@@ -152,12 +152,12 @@ const IDLE_TIMEOUT_MS: u64 = 15_000;
 struct App {
     by_user: CHashMap<UserId, Vec<Sender>>,
     by_game: CHashMap<GameId, Vec<Sender>>,
-    by_sri: RwLock<HashMap::<Sri, Vec<Sender>>>,
+    by_sri: CHashMap<Sri, Vec<Sender>>,
     by_id: RwLock<HashMap::<SocketId, UserSocket>>,
     watched_games: RwLock<LruCache<GameId, WatchedGame>>,
-    flags: [RwLock<HashSet<Sender>>; 2],
+    flags: [RwLock<HashSet<Sender>>; 2], // TODO: lock contention
     mlat: AtomicU32,
-    watching_mlat: RwLock<HashSet<Sender>>,
+    watching_mlat: RwLock<HashSet<Sender>>, // TODO: lock contention
     redis_sink: channel::Sender<String>,
     sid_sink: channel::Sender<(SocketId, SessionCookie)>,
     broadcaster: OnceCell<Sender>,
@@ -174,7 +174,7 @@ impl App {
         App {
             by_user: CHashMap::new(),
             by_game: CHashMap::new(),
-            by_sri: RwLock::new(HashMap::new()),
+            by_sri: CHashMap::new(),
             by_id: RwLock::new(HashMap::new()),
             watched_games: RwLock::new(LruCache::new(5_000)),
             flags: [RwLock::new(HashSet::new()), RwLock::new(HashSet::new())],
@@ -257,8 +257,8 @@ impl App {
                 }
             }
             LilaOut::TellSri { sri, payload } => {
-                if let Some(entry) = self.by_sri.read().get(&sri) {
-                    for sender in entry {
+                if let Some(entry) = self.by_sri.get(&sri) {
+                    for sender in entry.iter() {
                         if let Err(err) = sender.send(payload) {
                             log::error!("failed to send to sri: {:?}", err);
                         }
@@ -449,10 +449,7 @@ impl Handler for Socket {
 
                     // Add sri.
                     self.sri = Some(sri.clone());
-                    self.app.by_sri.write()
-                        .entry(sri)
-                        .and_modify(|v| v.push(self.sender.clone()))
-                        .or_insert_with(|| vec![self.sender.clone()]);
+                    self.app.by_sri.upsert(sri, || vec![self.sender.clone()], |v| v.push(self.sender.clone()));
                 },
                 Err(err) => {
                     log::warn!("invalid query string ({:?}): {}", err, query_string);
@@ -478,14 +475,13 @@ impl Handler for Socket {
 
         // Update by_sri.
         if let Some(sri) = self.sri.take() {
-            let mut by_sri = self.app.by_sri.write();
-            let senders = by_sri.get_mut(&sri).expect("sri in by_sri");
-            let our_token = self.sender.token();
-            let idx = senders.iter().position(|s| s.token() == our_token).expect("sender in senders");
-            senders.swap_remove(idx);
-            if senders.is_empty() {
-                by_sri.remove(&sri);
-            }
+            self.app.by_sri.alter(sri, |maybe_entry| {
+                let mut entry = maybe_entry.expect("sri in by_sri");
+                let our_token = self.sender.token();
+                let idx = entry.iter().position(|s| s.token() == our_token).expect("sender in senders");
+                entry.swap_remove(idx);
+                Some(entry).filter(|v| !v.is_empty())
+            });
         }
 
         // Update by_id.
