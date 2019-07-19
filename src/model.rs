@@ -164,9 +164,9 @@ impl FromStr for Flag {
 #[derive(Deserialize, Debug, Copy, Clone)]
 pub enum Endpoint {
     #[serde(rename = "site")]
-    Site = 0,
+    Site,
     #[serde(rename = "lobby")]
-    Lobby = 1,
+    Lobby,
 }
 
 #[derive(Debug)]
