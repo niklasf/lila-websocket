@@ -202,6 +202,12 @@ impl App {
     fn publish_chan<'a>(&self, chan: String, msg: LilaIn<'a>) {
         self.publish(RedisIn { chan: chan, msg: msg.to_string() })
     }
+    fn publish_endpoint<'a>(&self, endpoint: &Endpoint, msg: LilaIn<'a>) {
+        self.publish_chan(endpoint.chan_in(), msg)
+    }
+    fn publish_socket<'a>(&self, socket: &UserSocket, msg: LilaIn<'a>) {
+        self.publish_endpoint(&socket.endpoint, msg)
+    }
     fn publish_site<'a>(&self, msg: LilaIn<'a>) {
         self.publish_chan("site-in".to_string(), msg)
     }
@@ -757,7 +763,7 @@ fn main() {
             loop {
                 let RedisIn { chan, msg } = redis_recv.recv().expect("redis recv");
                 log::trace!("{}: {}", chan, msg);
-                let ret: u32 = redis.publish(chan, msg).expect("publish");
+                let ret: u32 = redis.publish(chan, msg).expect("redis publish");
                 if ret == 0 {
                     log::error!("lila missed a message");
                 }
@@ -795,7 +801,7 @@ fn main() {
                 if let Some(user_socket) = write_guard.get_mut(&socket_id) {
                     user_socket.set_user(maybe_uid.clone());
                     if user_socket.endpoint.send_connect_sri() {
-                        app.publish_site(LilaIn::ConnectSri(&user_socket.sri, maybe_uid.as_ref()))
+                        app.publish_socket(&user_socket, LilaIn::ConnectSri(&user_socket.sri, maybe_uid.as_ref()))
                     }
                 }
             }
