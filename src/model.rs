@@ -183,3 +183,12 @@ impl FromStr for Endpoint {
         })
     }
 }
+
+impl Endpoint {
+    pub fn send_connect_sri(&self) -> bool {
+        match self {
+            Endpoint::Site => false,
+            Endpoint::Lobby => true
+        }
+    }
+}

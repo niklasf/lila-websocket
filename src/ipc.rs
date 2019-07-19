@@ -99,6 +99,7 @@ impl<'a> LilaOut<'a> {
 pub enum LilaIn<'a> {
     Connect(&'a UserId),
     Disconnect(&'a UserId),
+    ConnectSri(&'a Sri, Option<&'a UserId>),
     DisconnectAll,
     Notified(&'a UserId),
     Watch(&'a GameId),
@@ -114,6 +115,10 @@ impl<'a> fmt::Display for LilaIn<'a> {
         match self {
             LilaIn::Connect(uid) => write!(f, "connect {}", uid),
             LilaIn::Disconnect(uid) => write!(f, "disconnect {}", uid),
+            LilaIn::ConnectSri(sri, maybe_uid) => match maybe_uid {
+                Some(uid) => write!(f, "connect/sri {} {}", sri, uid),
+                None => write!(f, "connect/sri {}", sri)
+            },
             LilaIn::DisconnectAll => write!(f, "disconnect/all"),
             LilaIn::Notified(uid) => write!(f, "notified {}", uid),
             LilaIn::Watch(game) => write!(f, "watch {}", game),

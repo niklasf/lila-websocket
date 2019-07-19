@@ -782,7 +782,10 @@ fn main() {
 
                 let mut write_guard = app.by_id.write();
                 if let Some(user_socket) = write_guard.get_mut(&socket_id) {
-                    user_socket.set_user(maybe_uid);
+                    user_socket.set_user(maybe_uid.clone());
+                    if user_socket.endpoint.send_connect_sri() {
+                        app.publish(LilaIn::ConnectSri(&user_socket.sri, maybe_uid.as_ref()))
+                    }
                 }
             }
         }).unwrap();
