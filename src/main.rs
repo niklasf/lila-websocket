@@ -326,6 +326,7 @@ struct UserSocket {
     app: &'static App,
     sender: Sender,
     sri: Sri,
+    endpoint: Endpoint,
     auth: SocketAuth,
     pending_notified: bool,
     pending_following_onlines: bool,
@@ -448,37 +449,38 @@ impl Handler for Socket {
         // Parse query string.
         let mut uri = handshake.request.resource().splitn(2, '?');
         if let (path, Some(query_string)) = (uri.next().unwrap(), uri.next()) {
-            match serde_urlencoded::from_str::<QueryString>(query_string) {
-                Ok(QueryString { flag, sri }) => {
-                    // Update by_id.
-                    self.app.by_id.write().insert(self.socket_id, UserSocket {
-                        app: self.app,
-                        sri: sri.clone(),
-                        auth: auth,
-                        pending_notified: false,
-                        pending_following_onlines: false,
-                        sender: self.sender.clone(),
-                    });
-                    // Subscribe to flag.
-                    self.flag = flag;
-                    if let Some(flag) = flag {
-                        self.app.flags[flag as usize].write().insert(self.sender.clone());
-                    }
-
-                    // Add sri.
-                    self.sri = Some(sri.clone());
-                    self.app.by_sri.write()
-                        .entry(sri)
-                        .and_modify(|v| v.push(self.sender.clone()))
-                        .or_insert_with(|| vec![self.sender.clone()]);
-                },
-                Err(err) => {
-                    log::warn!("invalid query string ({:?}): {}", err, query_string);
-                }
-            }
             match Endpoint::from_str(path) {
                 Ok(endpoint) => {
-                    self.endpoint = Some(endpoint)
+                    self.endpoint = Some(endpoint);
+                    match serde_urlencoded::from_str::<QueryString>(query_string) {
+                        Ok(QueryString { flag, sri }) => {
+                            // Update by_id.
+                            self.app.by_id.write().insert(self.socket_id, UserSocket {
+                                app: self.app,
+                                sri: sri.clone(),
+                                endpoint: endpoint,
+                                auth: auth,
+                                pending_notified: false,
+                                pending_following_onlines: false,
+                                sender: self.sender.clone(),
+                            });
+                            // Subscribe to flag.
+                            self.flag = flag;
+                            if let Some(flag) = flag {
+                                self.app.flags[flag as usize].write().insert(self.sender.clone());
+                            }
+
+                            // Add sri.
+                            self.sri = Some(sri.clone());
+                            self.app.by_sri.write()
+                                .entry(sri)
+                                .and_modify(|v| v.push(self.sender.clone()))
+                                .or_insert_with(|| vec![self.sender.clone()]);
+                        },
+                        Err(err) => {
+                            log::warn!("invalid query string ({:?}): {}", err, query_string);
+                        }
+                    }
                 },
                 Err(err) => {
                     log::warn!("invalid path ({:?}): {}", err, path);
