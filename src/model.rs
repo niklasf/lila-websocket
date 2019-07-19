@@ -159,3 +159,27 @@ impl FromStr for Flag {
         })
     }
 }
+
+/// The type of socket
+#[derive(Deserialize, Debug, Copy, Clone)]
+pub enum Endpoint {
+    #[serde(rename = "site")]
+    Site = 0,
+    #[serde(rename = "lobby")]
+    Lobby = 1,
+}
+
+#[derive(Debug)]
+pub struct UnknownEndpoint;
+
+impl FromStr for Endpoint {
+    type Err = UnknownEndpoint;
+
+    fn from_str(s: &str) -> Result<Endpoint, UnknownEndpoint> {
+        Ok(match s {
+            "/socket/v4" => Endpoint::Site,
+            "/lobby/socket/v4" => Endpoint::Lobby,
+            _ => return Err(UnknownEndpoint),
+        })
+    }
+}

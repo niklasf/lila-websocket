@@ -22,6 +22,7 @@ use std::net::IpAddr;
 use std::num::NonZeroU32;
 use std::time::Duration;
 use std::collections::{HashMap, HashSet};
+use std::str::FromStr;
 use smallvec::SmallVec;
 
 use std::sync::atomic::{AtomicI32, AtomicU32, Ordering};
@@ -36,7 +37,7 @@ mod ipc;
 mod util;
 mod analysis;
 
-use crate::model::{Flag, GameId, Sri, UserId};
+use crate::model::{Flag, GameId, Sri, UserId, Endpoint};
 use crate::ipc::{LilaOut, LilaIn};
 
 #[derive(StructOpt, Clone)]
@@ -156,6 +157,8 @@ struct App {
     watched_games: RwLock<LruCache<GameId, WatchedGame>>,
     flags: [RwLock<HashSet<Sender>>; 2],
     mlat: AtomicU32,
+    round_count: AtomicU32,
+    member_count: AtomicU32,
     watching_mlat: RwLock<HashSet<Sender>>,
     redis_sink: channel::Sender<String>,
     sid_sink: channel::Sender<(SocketId, SessionCookie)>,
@@ -182,6 +185,8 @@ impl App {
             broadcaster: OnceCell::new(),
             connection_count: AtomicI32::new(0),
             mlat: AtomicU32::new(u32::max_value()),
+            round_count: AtomicU32::new(0),
+            member_count: AtomicU32::new(0),
             watching_mlat: RwLock::new(HashSet::new()),
         }
     }
@@ -280,6 +285,12 @@ impl App {
                     }
                 }
             }
+            LilaOut::RoundNb(nb) => {
+                self.round_count.store(nb, Ordering::Relaxed);
+            }
+            LilaOut::MemberNb(nb) => {
+                self.member_count.store(nb, Ordering::Relaxed);
+            }
         }
     }
 }
@@ -288,6 +299,7 @@ impl App {
 struct Socket {
     app: &'static App,
     socket_id: SocketId,
+    endpoint: Option<Endpoint>,
     rate_limiter: KeyedRateLimiter<IpAddr>,
     client_addr: Option<IpAddr>,
     user_agent: Option<String>,
@@ -442,7 +454,7 @@ impl Handler for Socket {
 
         // Parse query string.
         let mut uri = handshake.request.resource().splitn(2, '?');
-        if let (_, Some(query_string)) = (uri.next().unwrap(), uri.next()) {
+        if let (path, Some(query_string)) = (uri.next().unwrap(), uri.next()) {
             match serde_urlencoded::from_str::<QueryString>(query_string) {
                 Ok(QueryString { flag, sri }) => {
                     // Subscribe to flag.
@@ -460,6 +472,14 @@ impl Handler for Socket {
                 },
                 Err(err) => {
                     log::warn!("invalid query string ({:?}): {}", err, query_string);
+                }
+            }
+            match Endpoint::from_str(path) {
+                Ok(endpoint) => {
+                    self.endpoint = Some(endpoint)
+                },
+                Err(err) => {
+                    log::warn!("invalid path ({:?}): {}", err, path);
                 }
             }
         }
@@ -532,7 +552,18 @@ impl Handler for Socket {
         // Fast path for ping.
         let msg = msg.as_text()?;
         if msg == "null" {
-            return self.sender.send(Message::text("0"));
+            match self.endpoint {
+                Some(Endpoint::Lobby) => {
+                    let res = format!(r#"{{"t":"n","r":{},"d":{}}}"#, 
+                        self.app.round_count.load(Ordering::Relaxed),
+                        self.app.member_count.load(Ordering::Relaxed)
+                    );
+                    return self.sender.send(Message::text(res));
+                }
+                _ => {
+                    return self.sender.send(Message::text("0"));
+                }
+            }
         }
 
         // Limit message size.
@@ -765,6 +796,7 @@ fn main() {
 
             let mut incoming = redis.as_pubsub();
             incoming.subscribe("site-out").expect("subscribe site-out");
+            incoming.subscribe("lobby-out").expect("subscribe lobby-out");
 
             loop {
                 let msg = incoming.get_message()
@@ -803,6 +835,7 @@ fn main() {
                 Socket {
                     app,
                     sender,
+                    endpoint: None, // set during handshake
                     rate_limiter: rate_limiter.clone(),
                     socket_id: SocketId(socket_id),
                     client_addr: None, // set during handshake

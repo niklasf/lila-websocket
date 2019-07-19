@@ -34,6 +34,8 @@ pub enum LilaOut<'a> {
         uid: UserId,
     },
     MoveLatency(u32),
+    MemberNb(u32),
+    RoundNb(u32),
 }
 
 impl<'a> LilaOut<'a> {
@@ -80,6 +82,12 @@ impl<'a> LilaOut<'a> {
             }
             ("mlat", Some(value)) => {
                 LilaOut::MoveLatency(value.parse().map_err(|_| IpcError)?)
+            }
+            ("member/nb", Some(value)) => {
+                LilaOut::MemberNb(value.parse().map_err(|_| IpcError)?)
+            },
+            ("round/nb", Some(value)) => {
+                LilaOut::RoundNb(value.parse().map_err(|_| IpcError)?)
             },
             _ => return Err(IpcError),
         })
