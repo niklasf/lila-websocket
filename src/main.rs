@@ -133,6 +133,26 @@ enum SocketOut {
     EvalPut, // opaque
     #[serde(rename = "ping")]
     ChallengePing,
+
+    /// lobby messages
+    #[serde(rename = "join")]
+    Join, // opaque
+    #[serde(rename = "cancel")]
+    Cancel, // opaque
+    #[serde(rename = "joinSeek")]
+    JoinSeek, // opaque
+    #[serde(rename = "cancelSeek")]
+    CancelSeek, // opaque
+    #[serde(rename = "idle")]
+    Idle, // opaque
+    #[serde(rename = "poolIn")]
+    PoolIn, // opaque
+    #[serde(rename = "poolOut")]
+    PoolOut, // opaque
+    #[serde(rename = "hookIn")]
+    HookIn, // opaque
+    #[serde(rename = "hookOut")]
+    HookOut, // opaque
 }
 
 /// Session cookie from Play framework.
@@ -711,6 +731,19 @@ impl Handler for Socket {
             }
             Ok(SocketOut::ChallengePing) => {
                 log::warn!("unexpected challenge ping (ua: {:?}): {}", self.user_agent, msg);
+                Ok(())
+            }
+            // lobby forwarded messages
+            // these don't need to send the userId
+            // TODO remove it
+            Ok(SocketOut::Join) | Ok(SocketOut::Cancel) | Ok(SocketOut::JoinSeek) | Ok(SocketOut::CancelSeek) |Ok(SocketOut::Idle) | Ok(SocketOut::PoolIn) |  Ok(SocketOut::PoolOut) | Ok(SocketOut::HookIn) | Ok(SocketOut::HookOut) => {
+                if let Some(ref sri) = self.sri {
+                    let by_id = self.app.by_id.read();
+                    let socket = by_id.get(&self.socket_id).expect("user socket");
+                    socket.publish(LilaIn::TellSri(sri, socket.user_id(), msg));
+                } else {
+                    log::warn!("sri required for: {}", msg);
+                }
                 Ok(())
             }
             Err(err) => {
