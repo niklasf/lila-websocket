@@ -325,6 +325,7 @@ enum SocketAuth {
 struct UserSocket {
     app: &'static App,
     sender: Sender,
+    sri: Sri,
     auth: SocketAuth,
     pending_notified: bool,
     pending_following_onlines: bool,
@@ -438,16 +439,8 @@ impl Handler for Socket {
                 serde_urlencoded::from_str::<SessionCookie>(&s[idx..]).ok()
             });
 
-        // Update by_id.
-        self.app.by_id.write().insert(self.socket_id, UserSocket {
-            app: self.app,
-            auth: if maybe_cookie.is_some() { SocketAuth::Requested } else { SocketAuth::Anonymous },
-            pending_notified: false,
-            pending_following_onlines: false,
-            sender: self.sender.clone(),
-        });
-
         // Request authentication.
+        let auth = if maybe_cookie.is_some() { SocketAuth::Requested } else { SocketAuth::Anonymous };
         if let Some(cookie) = maybe_cookie {
             self.app.sid_sink.send((self.socket_id, cookie)).expect("auth request");
         }
@@ -457,6 +450,15 @@ impl Handler for Socket {
         if let (path, Some(query_string)) = (uri.next().unwrap(), uri.next()) {
             match serde_urlencoded::from_str::<QueryString>(query_string) {
                 Ok(QueryString { flag, sri }) => {
+                    // Update by_id.
+                    self.app.by_id.write().insert(self.socket_id, UserSocket {
+                        app: self.app,
+                        sri: sri.clone(),
+                        auth: auth,
+                        pending_notified: false,
+                        pending_following_onlines: false,
+                        sender: self.sender.clone(),
+                    });
                     // Subscribe to flag.
                     self.flag = flag;
                     if let Some(flag) = flag {
