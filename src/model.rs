@@ -191,4 +191,10 @@ impl Endpoint {
             Endpoint::Lobby => true
         }
     }
+    pub fn chan_in(&self) -> String {
+        match self {
+            Endpoint::Site => "site-in".to_string(),
+            Endpoint::Lobby => "lobby-in".to_string()
+        }
+    }
 }

@@ -59,6 +59,11 @@ struct Opt {
     rate_limiter_credits: u32,
 }
 
+pub struct RedisIn {
+    chan: String,
+    msg: String
+}
+
 /// Messages we send to Websocket clients.
 #[derive(Serialize)]
 #[serde(tag = "t", content = "d")]
@@ -160,7 +165,7 @@ struct App {
     round_count: AtomicU32,
     member_count: AtomicU32,
     watching_mlat: RwLock<HashSet<Sender>>,
-    redis_sink: channel::Sender<String>,
+    redis_sink: channel::Sender<RedisIn>,
     sid_sink: channel::Sender<(SocketId, SessionCookie)>,
     broadcaster: OnceCell<Sender>,
     connection_count: AtomicI32, // signed to allow relaxed writes with underflow
@@ -172,7 +177,7 @@ struct WatchedGame {
 }
 
 impl App {
-    fn new(redis_sink: channel::Sender<String>, sid_sink: channel::Sender<(SocketId, SessionCookie)>) -> App {
+    fn new(redis_sink: channel::Sender<RedisIn>, sid_sink: channel::Sender<(SocketId, SessionCookie)>) -> App {
         App {
             by_user: RwLock::new(HashMap::new()),
             by_game: RwLock::new(HashMap::new()),
@@ -191,8 +196,14 @@ impl App {
         }
     }
 
-    fn publish<'a>(&self, msg: LilaIn<'a>) {
-        self.redis_sink.send(msg.to_string()).expect("redis sink");
+    fn publish(&self, msg: RedisIn) {
+        self.redis_sink.send(msg).expect("redis sink");
+    }
+    fn publish_chan<'a>(&self, chan: String, msg: LilaIn<'a>) {
+        self.publish(RedisIn { chan: chan, msg: msg.to_string() })
+    }
+    fn publish_site<'a>(&self, msg: LilaIn<'a>) {
+        self.publish_chan("site-in".to_string(), msg)
     }
 
     fn received(&self, msg: LilaOut) {
@@ -238,7 +249,7 @@ impl App {
             }
             LilaOut::MoveLatency(mlat) => {
                 // Respond with our stats (connection count).
-                self.publish(LilaIn::Connections(
+                self.publish_site(LilaIn::Connections(
                     max(0, self.connection_count.load(Ordering::Relaxed)) as u32
                 ));
 
@@ -342,7 +353,7 @@ impl UserSocket {
                     .and_modify(|v| v.push(self.sender.clone()))
                     .or_insert_with(|| {
                         log::debug!("first open: {}", uid);
-                        self.app.publish(LilaIn::Connect(&uid));
+                        self.app.publish_site(LilaIn::Connect(&uid));
                         vec![self.sender.clone()]
                     });
 
@@ -363,7 +374,7 @@ impl UserSocket {
                 if entry.is_empty() {
                     by_user.remove(&uid);
                     log::debug!("last close: {}", uid);
-                    self.app.publish(LilaIn::Disconnect(&uid));
+                    self.app.publish_site(LilaIn::Disconnect(&uid));
                 }
             },
             // Authentication request finished.
@@ -382,7 +393,7 @@ impl UserSocket {
 
     fn on_ping(&self, lag: u32) {
         if let SocketAuth::Authenticated(ref uid) = self.auth {
-            self.app.publish(LilaIn::Lag(uid, lag));
+            self.app.publish_site(LilaIn::Lag(uid, lag));
         }
     }
 
@@ -390,7 +401,7 @@ impl UserSocket {
         self.pending_notified = false;
         match &self.auth {
             SocketAuth::Requested => self.pending_notified = true,
-            SocketAuth::Authenticated(uid) => self.app.publish(LilaIn::Notified(uid)),
+            SocketAuth::Authenticated(uid) => self.app.publish_site(LilaIn::Notified(uid)),
             SocketAuth::Anonymous => log::warn!("anon notified"),
         }
     }
@@ -399,7 +410,7 @@ impl UserSocket {
         self.pending_following_onlines = false;
         match &self.auth {
             SocketAuth::Requested => self.pending_following_onlines = true,
-            SocketAuth::Authenticated(uid) => self.app.publish(LilaIn::Friends(uid)),
+            SocketAuth::Authenticated(uid) => self.app.publish_site(LilaIn::Friends(uid)),
             SocketAuth::Anonymous => log::debug!("anon following_onlines"),
         }
     }
@@ -530,7 +541,7 @@ impl Handler for Socket {
             if watchers.is_empty() {
                 by_game.remove(&game);
                 log::debug!("no more watchers for {:?}", game);
-                self.app.publish(LilaIn::Unwatch(&game));
+                self.app.publish_site(LilaIn::Unwatch(&game));
             }
         }
 
@@ -628,7 +639,7 @@ impl Handler for Socket {
                             })
                             .or_insert_with(|| {
                                 log::debug!("start watching: {:?}", game);
-                                self.app.publish(LilaIn::Watch(&game));
+                                self.app.publish_site(LilaIn::Watch(&game));
                                 vec![self.sender.clone()]
                             });
                     }
@@ -685,7 +696,7 @@ impl Handler for Socket {
                 if let Some(ref sri) = self.sri {
                     let by_id = self.app.by_id.read();
                     let uid = by_id.get(&self.socket_id).expect("user socket").user_id();
-                    self.app.publish(LilaIn::TellSri(sri, uid, msg));
+                    self.app.publish_site(LilaIn::TellSri(sri, uid, msg));
                 } else {
                     log::warn!("sri required for: {}", msg);
                 }
@@ -733,7 +744,7 @@ fn main() {
             Duration::from_secs(10));
 
         // Clear connections and subscriptions from previous process.
-        app.publish(LilaIn::DisconnectAll);
+        app.publish_site(LilaIn::DisconnectAll);
 
         // Thread for outgoing messages to lila.
         let opt_inner = opt.clone();
@@ -744,9 +755,9 @@ fn main() {
                 .expect("redis connection for publish");
 
             loop {
-                let msg: String = redis_recv.recv().expect("redis recv");
-                log::trace!("site-in: {}", msg);
-                let ret: u32 = redis.publish("site-in", msg).expect("publish site-in");
+                let RedisIn { chan, msg } = redis_recv.recv().expect("redis recv");
+                log::trace!("{}: {}", chan, msg);
+                let ret: u32 = redis.publish(chan, msg).expect("publish");
                 if ret == 0 {
                     log::error!("lila missed a message");
                 }
@@ -784,7 +795,7 @@ fn main() {
                 if let Some(user_socket) = write_guard.get_mut(&socket_id) {
                     user_socket.set_user(maybe_uid.clone());
                     if user_socket.endpoint.send_connect_sri() {
-                        app.publish(LilaIn::ConnectSri(&user_socket.sri, maybe_uid.as_ref()))
+                        app.publish_site(LilaIn::ConnectSri(&user_socket.sri, maybe_uid.as_ref()))
                     }
                 }
             }
