@@ -205,9 +205,6 @@ impl App {
     fn publish_endpoint<'a>(&self, endpoint: &Endpoint, msg: LilaIn<'a>) {
         self.publish_chan(endpoint.chan_in(), msg)
     }
-    fn publish_socket<'a>(&self, socket: &UserSocket, msg: LilaIn<'a>) {
-        self.publish_endpoint(&socket.endpoint, msg)
-    }
     fn publish_site<'a>(&self, msg: LilaIn<'a>) {
         self.publish_chan("site-in".to_string(), msg)
     }
@@ -427,6 +424,10 @@ impl UserSocket {
             _ => None,
         }
     }
+
+    fn publish<'a>(&self, msg: LilaIn<'a>) {
+        self.app.publish_endpoint(&self.endpoint, msg)
+    }
 }
 
 impl Handler for Socket {
@@ -575,7 +576,7 @@ impl Handler for Socket {
         if msg == "null" {
             match self.endpoint {
                 Some(Endpoint::Lobby) => {
-                    let res = format!(r#"{{"t":"n","r":{},"d":{}}}"#, 
+                    let res = format!(r#"{{"t":"n","r":{},"d":{}}}"#,
                         self.app.round_count.load(Ordering::Relaxed),
                         self.app.member_count.load(Ordering::Relaxed)
                     );
@@ -801,7 +802,7 @@ fn main() {
                 if let Some(user_socket) = write_guard.get_mut(&socket_id) {
                     user_socket.set_user(maybe_uid.clone());
                     if user_socket.endpoint.send_connect_sri() {
-                        app.publish_socket(&user_socket, LilaIn::ConnectSri(&user_socket.sri, maybe_uid.as_ref()))
+                        user_socket.publish(LilaIn::ConnectSri(&user_socket.sri, maybe_uid.as_ref()))
                     }
                 }
             }
