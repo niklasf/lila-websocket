@@ -609,10 +609,10 @@ impl Handler for Socket {
         }
 
         // Limit message size.
-        if msg.len() > 1024 {
+        if msg.len() > 2048 {
             log::warn!("very long message ({} bytes): {}", msg.len(), msg);
             return self.sender.close(CloseCode::Size);
-        } else if msg.len() > 512 {
+        } else if msg.len() > 1024 {
             log::info!("long message ({} bytes): {}", msg.len(), msg);
         }
 
@@ -644,9 +644,6 @@ impl Handler for Socket {
             Ok(SocketOut::StartWatching { d }) => {
                 for game in d {
                     if self.watching.insert(game.clone()) {
-                        if self.watching.len() > 20 {
-                            log::info!("client is watching many games: {}", self.watching.len());
-                        }
 
                         // If cached, send current game state immediately.
                         if let Some(state) = self.app.watched_games.read().peek(&game) {
@@ -670,6 +667,9 @@ impl Handler for Socket {
                                 vec![self.sender.clone()]
                             });
                     }
+                }
+                if self.watching.len() > 20 {
+                    log::info!("client is watching many games: {}", self.watching.len());
                 }
                 Ok(())
             },
@@ -747,7 +747,7 @@ impl Handler for Socket {
                 Ok(())
             }
             Err(err) => {
-                log::warn!("protocol violation of client ({:?}): {}", err, msg);
+                log::warn!("protocol violation of client (ua: {:?}): ({:?}): {}", self.user_agent, err, msg);
                 self.sender.close(CloseCode::Protocol)
             }
         }
@@ -764,7 +764,7 @@ impl Handler for Socket {
 
     fn on_timeout(&mut self, event: Token) -> ws::Result<()> {
         assert_eq!(event, IDLE_TIMEOUT_TOKEN);
-        log::info!("closing socket due to timeout");
+        log::debug!("closing socket due to timeout");
         self.sender.close(CloseCode::Away)
     }
 }
