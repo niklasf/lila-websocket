@@ -297,6 +297,7 @@ struct Socket {
     flag: Option<Flag>,
     sri: Option<Sri>,
     idle_timeout: Option<Timeout>,
+    log_ignore: bool // stop logging errors from this client
 }
 
 /// Uniquely identifies a socket connection over the entire runtime of the
@@ -657,7 +658,10 @@ impl Handler for Socket {
                 Ok(())
             }
             Ok(SocketOut::ChallengePing) => {
-                log::warn!("unexpected challenge ping (ua: {:?}): {}", self.user_agent, msg);
+                if !self.log_ignore {
+                    log::warn!("unexpected challenge ping (ua: {:?}): {}", self.user_agent, msg);
+                    self.log_ignore = true;
+                }
                 Ok(())
             }
             Err(err) => {
@@ -812,6 +816,7 @@ fn main() {
                     flag: None, // set during handshake
                     watching: HashSet::new(),
                     idle_timeout: None, // set during handshake
+                    log_ignore: false
                 }
             })
             .expect("valid settings");
