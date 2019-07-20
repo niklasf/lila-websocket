@@ -822,7 +822,7 @@ fn main() {
                 let maybe_uid = match session_store.find_one(Some(query), Some(opts)) {
                     Ok(Some(doc)) => doc.get_str("user").ok().and_then(|s| UserId::new(s).ok()),
                     Ok(None) => {
-                        log::info!("session store does not have sid: {}", cookie.session_id);
+                        log::debug!("session store does not have sid: {}", cookie.session_id);
                         None
                     },
                     Err(err) => {
