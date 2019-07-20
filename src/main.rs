@@ -536,10 +536,10 @@ impl Handler for Socket {
         }
 
         // Limit message size.
-        if msg.len() > 1024 {
+        if msg.len() > 2048 {
             log::warn!("very long message ({} bytes): {}", msg.len(), msg);
             return self.sender.close(CloseCode::Size);
-        } else if msg.len() > 512 {
+        } else if msg.len() > 1024 {
             log::info!("long message ({} bytes): {}", msg.len(), msg);
         }
 
