@@ -126,7 +126,7 @@ enum SocketOut {
     #[serde(rename = "evalPut")]
     EvalPut, // opaque
     #[serde(alias = "ping", alias = "flag", alias = "poolIn")]
-    UnexpectedLobbyMessage,
+    UnexpectedMessage,
 }
 
 /// Session cookie from Play framework.
@@ -657,9 +657,9 @@ impl Handler for Socket {
                 }
                 Ok(())
             }
-            Ok(SocketOut::UnexpectedLobbyMessage) => {
+            Ok(SocketOut::UnexpectedMessage) => {
                 if !mem::replace(&mut self.log_ignore, true) {
-                    log::warn!("unexpected lobby message (ua: {:?}): {}", self.user_agent, msg);
+                    log::warn!("unexpected message (ua: {:?}): {}", self.user_agent, msg);
                 }
                 Ok(())
             }
