@@ -734,7 +734,7 @@ impl Handler for Socket {
             // lobby forwarded messages
             // these don't need to send the userId
             // TODO remove it
-            Ok(SocketOut::Join) | Ok(SocketOut::Cancel) | Ok(SocketOut::JoinSeek) | Ok(SocketOut::CancelSeek) |Ok(SocketOut::Idle) | Ok(SocketOut::PoolIn) |  Ok(SocketOut::PoolOut) | Ok(SocketOut::HookIn) | Ok(SocketOut::HookOut) => {
+            Ok(SocketOut::LobbyMsg) => {
                 if let Some(ref sri) = self.sri {
                     let by_id = self.app.by_id.read();
                     let socket = by_id.get(&self.socket_id).expect("user socket");
