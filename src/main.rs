@@ -125,7 +125,7 @@ enum SocketOut {
     EvalGet, // opaque
     #[serde(rename = "evalPut")]
     EvalPut, // opaque
-    #[serde(alias = "ping", alias = "flag")]
+    #[serde(alias = "ping", alias = "flag", alias = "poolIn")]
     UnexpectedLobbyMessage,
 }
 
