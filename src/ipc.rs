@@ -1,6 +1,7 @@
 use std::fmt;
 
 use smallvec::SmallVec;
+use std::collections::HashMap;
 
 use crate::model::{Flag, GameId, Sri, UserId, InvalidUserId};
 
@@ -96,7 +97,7 @@ pub enum LilaIn<'a> {
     Watch(&'a GameId),
     Unwatch(&'a GameId),
     Connections(u32),
-    Lag(&'a UserId, u32),
+    Lags(&'a HashMap::<UserId, u32>),
     Friends(&'a UserId),
     TellSri(&'a Sri, Option<&'a UserId>, &'a str),
 }
@@ -111,7 +112,13 @@ impl<'a> fmt::Display for LilaIn<'a> {
             LilaIn::Watch(game) => write!(f, "watch {}", game),
             LilaIn::Unwatch(game) => write!(f, "unwatch {}", game),
             LilaIn::Connections(n) => write!(f, "connections {}", n),
-            LilaIn::Lag(uid, lag) => write!(f, "lag {} {}", uid, lag),
+            LilaIn::Lags(lags) => {
+                let mut s = String::new();
+                for (uid, lag) in lags.iter() { 
+                    s.push_str(format!("{}:{},", uid, lag).as_str())
+                }
+                write!(f, "lags {}", s)
+            }
             LilaIn::Friends(uid) => write!(f, "friends {}", uid),
             LilaIn::TellSri(sri, uid, payload) =>
                 write!(f, "tell/sri {} {} {}", sri, uid.map_or("-", |u| u.as_str()), payload),
