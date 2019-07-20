@@ -678,7 +678,7 @@ impl Handler for Socket {
 
     fn on_timeout(&mut self, event: Token) -> ws::Result<()> {
         assert_eq!(event, IDLE_TIMEOUT_TOKEN);
-        log::info!("closing socket due to timeout");
+        log::debug!("closing socket due to timeout");
         self.sender.close(CloseCode::Away)
     }
 }
