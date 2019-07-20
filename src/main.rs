@@ -784,7 +784,9 @@ fn main() {
             Duration::from_secs(10));
 
         // Clear connections and subscriptions from previous process.
-        app.publish_site(LilaIn::DisconnectAll);
+        for endpoint in Endpoint::all() {
+            app.publish_endpoint(&endpoint, LilaIn::DisconnectAll);
+        }
 
         // Thread for outgoing messages to lila.
         let opt_inner = opt.clone();

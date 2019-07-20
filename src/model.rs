@@ -197,4 +197,7 @@ impl Endpoint {
             Endpoint::Lobby => "lobby-in".to_string()
         }
     }
+    pub fn all() -> Vec<Endpoint> {
+        vec![Endpoint::Site, Endpoint::Lobby]
+    }
 }
