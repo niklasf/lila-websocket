@@ -376,7 +376,7 @@ impl UserSocket {
                     .and_modify(|v| v.push(self.sender.clone()))
                     .or_insert_with(|| {
                         log::debug!("first open: {}", uid);
-                        self.app.publish_site(LilaIn::Connect(&uid));
+                        self.publish(LilaIn::Connect(&uid));
                         vec![self.sender.clone()]
                     });
 
@@ -397,7 +397,7 @@ impl UserSocket {
                 if entry.is_empty() {
                     by_user.remove(&uid);
                     log::debug!("last close: {}", uid);
-                    self.app.publish_site(LilaIn::Disconnect(&uid));
+                    self.publish(LilaIn::Disconnect(&uid));
                 }
             },
             // Authentication request finished.
@@ -416,7 +416,7 @@ impl UserSocket {
 
     fn on_ping(&self, lag: u32) {
         if let SocketAuth::Authenticated(ref uid) = self.auth {
-            self.app.publish_site(LilaIn::Lag(uid, lag));
+            self.publish(LilaIn::Lag(uid, lag));
         }
     }
 
@@ -424,7 +424,7 @@ impl UserSocket {
         self.pending_notified = false;
         match &self.auth {
             SocketAuth::Requested => self.pending_notified = true,
-            SocketAuth::Authenticated(uid) => self.app.publish_site(LilaIn::Notified(uid)),
+            SocketAuth::Authenticated(uid) => self.publish(LilaIn::Notified(uid)),
             SocketAuth::Anonymous => log::warn!("anon notified"),
         }
     }
@@ -433,7 +433,7 @@ impl UserSocket {
         self.pending_following_onlines = false;
         match &self.auth {
             SocketAuth::Requested => self.pending_following_onlines = true,
-            SocketAuth::Authenticated(uid) => self.app.publish_site(LilaIn::Friends(uid)),
+            SocketAuth::Authenticated(uid) => self.publish(LilaIn::Friends(uid)),
             SocketAuth::Anonymous => log::debug!("anon following_onlines"),
         }
     }
@@ -568,7 +568,7 @@ impl Handler for Socket {
             if watchers.is_empty() {
                 by_game.remove(&game);
                 log::debug!("no more watchers for {:?}", game);
-                self.app.publish_site(LilaIn::Unwatch(&game));
+                user_socket.publish(LilaIn::Unwatch(&game));
             }
         }
 
@@ -727,8 +727,8 @@ impl Handler for Socket {
             Ok(SocketOut::EvalGet) | Ok(SocketOut::EvalPut) => {
                 if let Some(ref sri) = self.sri {
                     let by_id = self.app.by_id.read();
-                    let uid = by_id.get(&self.socket_id).expect("user socket").user_id();
-                    self.app.publish_site(LilaIn::TellSri(sri, uid, msg));
+                    let user_socket = by_id.get(&self.socket_id).expect("user socket");
+                    user_socket.publish(LilaIn::TellSri(sri, user_socket.user_id(), msg));
                 } else {
                     log::warn!("sri required for: {}", msg);
                 }
