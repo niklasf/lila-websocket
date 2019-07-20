@@ -520,9 +520,8 @@ impl Handler for Socket {
     fn on_message(&mut self, msg: Message) -> ws::Result<()> {
         if let Some(client_addr) = self.client_addr {
             if self.rate_limiter.check(client_addr).is_err() {
-                if !self.rate_limited_once {
+                if !mem::replace(&mut self.rate_limited_once, true) {
                     log::warn!("socket of client {} rate limited (will log only once)", client_addr);
-                    self.rate_limited_once = true;
                 }
                 return Ok(()); // ignore message
             }

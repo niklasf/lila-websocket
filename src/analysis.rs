@@ -126,10 +126,8 @@ fn drops(pos: &VariantPosition) -> Option<String> {
 fn fix_castles(variant: Variant, fen: &mut Fen) {
     if variant == Variant::RacingKings {
         fen.castling_rights.clear();
-    } else {
-        if let Err(filtered_castles) = Castles::from_setup(fen) {
-            fen.castling_rights = filtered_castles.castling_rights();
-        }
+    } else if let Err(filtered_castles) = Castles::from_setup(fen) {
+        fen.castling_rights = filtered_castles.castling_rights();
     }
 }
 
