@@ -177,7 +177,7 @@ impl FromStr for Endpoint {
 
     fn from_str(s: &str) -> Result<Endpoint, UnknownEndpoint> {
         Ok(match s {
-            "/socket/v4" => Endpoint::Site,
+            "/socket/v4" | "/analysis/socket/v4" => Endpoint::Site,
             "/lobby/socket/v4" => Endpoint::Lobby,
             _ => return Err(UnknownEndpoint),
         })
