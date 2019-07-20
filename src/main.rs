@@ -571,9 +571,6 @@ impl Handler for Socket {
             Ok(SocketOut::StartWatching { d }) => {
                 for game in d {
                     if self.watching.insert(game.clone()) {
-                        if self.watching.len() > 20 {
-                            log::info!("client is watching many games: {}", self.watching.len());
-                        }
 
                         // If cached, send current game state immediately.
                         if let Some(state) = self.app.watched_games.read().peek(&game) {
@@ -597,6 +594,9 @@ impl Handler for Socket {
                                 vec![self.sender.clone()]
                             });
                     }
+                }
+                if self.watching.len() > 20 {
+                    log::info!("client is watching many games: {}", self.watching.len());
                 }
                 Ok(())
             },
