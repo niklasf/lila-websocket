@@ -131,28 +131,19 @@ enum SocketOut {
     EvalGet, // opaque
     #[serde(rename = "evalPut")]
     EvalPut, // opaque
-    #[serde(rename = "ping")]
-    ChallengePing,
-
-    /// lobby messages
-    #[serde(rename = "join")]
-    Join, // opaque
-    #[serde(rename = "cancel")]
-    Cancel, // opaque
-    #[serde(rename = "joinSeek")]
-    JoinSeek, // opaque
-    #[serde(rename = "cancelSeek")]
-    CancelSeek, // opaque
-    #[serde(rename = "idle")]
-    Idle, // opaque
-    #[serde(rename = "poolIn")]
-    PoolIn, // opaque
-    #[serde(rename = "poolOut")]
-    PoolOut, // opaque
-    #[serde(rename = "hookIn")]
-    HookIn, // opaque
-    #[serde(rename = "hookOut")]
-    HookOut, // opaque
+    #[serde(alias = "join")]
+    #[serde(alias = "cancel")]
+    #[serde(alias = "joinSeek")]
+    #[serde(alias = "cancelSeek")]
+    #[serde(alias = "idle")]
+    #[serde(alias = "poolIn")]
+    #[serde(alias = "poolOut")]
+    #[serde(alias = "hookIn")]
+    #[serde(alias = "hookOut")]
+    LobbyMsg, // opaque
+    #[serde(alias = "ping")]
+    #[serde(alias = "flag")] // round msg?
+    UnexpectedMessage,
 }
 
 /// Session cookie from Play framework.
@@ -343,6 +334,7 @@ struct Socket {
     flag: Option<Flag>,
     sri: Option<Sri>,
     idle_timeout: Option<Timeout>,
+    log_ignore: bool // stop logging errors from this client
 }
 
 /// Uniquely identifies a socket connection over the entire runtime of the
@@ -586,9 +578,8 @@ impl Handler for Socket {
     fn on_message(&mut self, msg: Message) -> ws::Result<()> {
         if let Some(client_addr) = self.client_addr {
             if self.rate_limiter.check(client_addr).is_err() {
-                if !self.rate_limited_once {
+                if !mem::replace(&mut self.rate_limited_once, true) {
                     log::warn!("socket of client {} rate limited (will log only once)", client_addr);
-                    self.rate_limited_once = true;
                 }
                 return Ok(()); // ignore message
             }
@@ -734,8 +725,10 @@ impl Handler for Socket {
                 }
                 Ok(())
             }
-            Ok(SocketOut::ChallengePing) => {
-                log::warn!("unexpected challenge ping (ua: {:?}): {}", self.user_agent, msg);
+            Ok(SocketOut::UnexpectedMessage) => {
+                if !mem::replace(&mut self.log_ignore, true) {
+                    log::warn!("unexpected message (ua: {:?}): {}", self.user_agent, msg);
+                }
                 Ok(())
             }
             // lobby forwarded messages
@@ -908,6 +901,7 @@ fn main() {
                     flag: None, // set during handshake
                     watching: HashSet::new(),
                     idle_timeout: None, // set during handshake
+                    log_ignore: false
                 }
             })
             .expect("valid settings");
