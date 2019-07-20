@@ -100,6 +100,7 @@ pub enum LilaIn<'a> {
     Connect(&'a UserId),
     Disconnect(&'a UserId),
     ConnectSri(&'a Sri, Option<&'a UserId>),
+    DisconnectSri(&'a Sri),
     DisconnectAll,
     Notified(&'a UserId),
     Watch(&'a GameId),
@@ -119,6 +120,7 @@ impl<'a> fmt::Display for LilaIn<'a> {
                 Some(uid) => write!(f, "connect/sri {} {}", sri, uid),
                 None => write!(f, "connect/sri {}", sri)
             },
+            LilaIn::DisconnectSri(sri) => write!(f, "disconnect/sri {}", sri),
             LilaIn::DisconnectAll => write!(f, "disconnect/all"),
             LilaIn::Notified(uid) => write!(f, "notified {}", uid),
             LilaIn::Watch(game) => write!(f, "watch {}", game),

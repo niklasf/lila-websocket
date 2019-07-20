@@ -576,6 +576,11 @@ impl Handler for Socket {
         if let Some(flag) = self.flag.take() {
             self.app.flags[flag as usize].write().remove(&self.sender);
         }
+
+        // Maybe tell lila
+        if user_socket.endpoint.send_connect_sri() {
+            user_socket.publish(LilaIn::DisconnectSri(&user_socket.sri));
+        }
     }
 
     fn on_message(&mut self, msg: Message) -> ws::Result<()> {
