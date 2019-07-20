@@ -661,7 +661,7 @@ impl Handler for Socket {
                 Ok(())
             }
             Err(err) => {
-                log::warn!("protocol violation of client ({:?}): {}", err, msg);
+                log::warn!("protocol violation of client (ua: {:?}): ({:?}): {}", self.user_agent, err, msg);
                 self.sender.close(CloseCode::Protocol)
             }
         }
