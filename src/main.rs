@@ -182,6 +182,7 @@ struct App {
     connection_count: AtomicI32, // signed to allow relaxed writes with underflow
 }
 
+#[derive(Debug)]
 struct WatchedGame {
     fen: String,
     lm: String,
@@ -559,6 +560,7 @@ impl Handler for Socket {
             watchers.swap_remove(idx);
             if watchers.is_empty() {
                 by_game.remove(&game);
+                self.app.watched_games.write().pop(&game);
                 log::debug!("no more watchers for {:?}", game);
                 user_socket.publish(LilaIn::Unwatch(&game));
             }
