@@ -106,7 +106,7 @@ fn dests(pos: &VariantPosition) -> String {
                 dests.push(piotr(m.to()));
 
                 // add extra castling dests
-                if from_sq.file() == File::E {
+                if from_sq.file() == File::E && (m.to().file() == File::A || m.to().file() == File::H) {
                     if let Some(castling_side) = m.castling_side() {
                         dests.push(piotr(castling_side.rook_to(pos.turn())));
                     }
