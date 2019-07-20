@@ -125,7 +125,17 @@ enum SocketOut {
     EvalGet, // opaque
     #[serde(rename = "evalPut")]
     EvalPut, // opaque
-    #[serde(alias = "ping", alias = "flag", alias = "poolIn")]
+    #[serde(alias = "ping")]
+    #[serde(alias = "join")]
+    #[serde(alias = "cancel")]
+    #[serde(alias = "joinSeek")]
+    #[serde(alias = "cancelSeek")]
+    #[serde(alias = "idle")]
+    #[serde(alias = "poolIn")]
+    #[serde(alias = "poolOut")]
+    #[serde(alias = "hookIn")]
+    #[serde(alias = "hookOut")]
+    #[serde(alias = "flag")] // round msg?
     UnexpectedMessage,
 }
 
