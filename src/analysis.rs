@@ -100,10 +100,19 @@ fn dests(pos: &VariantPosition) -> String {
             if !mem::replace(&mut first, false) {
                 dests.push(' ');
             }
+
             dests.push(piotr(from_sq));
             for m in from_here {
                 dests.push(piotr(m.to()));
+
+                // add extra castling dests
+                if from_sq.file() == File::E {
+                    if let Some(castling_side) = m.castling_side() {
+                        dests.push(piotr(castling_side.rook_to(pos.turn())));
+                    }
+                }
             }
+
         }
     }
 
