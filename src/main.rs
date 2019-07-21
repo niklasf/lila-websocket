@@ -164,12 +164,50 @@ struct QueryString {
 const IDLE_TIMEOUT_TOKEN: Token = Token(1);
 const IDLE_TIMEOUT_MS: u64 = 15_000;
 
+/// Sender maps for each endpoint
+struct EndpointSenders {
+    by_user: RwLock<HashMap::<UserId, Vec<Sender>>>,
+    by_sri: RwLock<HashMap::<Sri, Vec<Sender>>>
+}
+impl EndpointSenders {
+    fn new() -> EndpointSenders {
+        EndpointSenders {
+            by_user: RwLock::new(HashMap::new()),
+            by_sri: RwLock::new(HashMap::new())
+        }
+    }
+}
+struct AppEndpoints {
+    site: EndpointSenders,
+    lobby: EndpointSenders
+}
+impl AppEndpoints {
+    fn new() -> AppEndpoints {
+        AppEndpoints {
+            site: EndpointSenders::new(),
+            lobby: EndpointSenders::new()
+        }
+    }
+    fn by(&self, e: Endpoint) -> &EndpointSenders {
+        match e {
+            Endpoint::Site => &self.site,
+            Endpoint::Lobby => &self.lobby
+        }
+    }
+    // messages sent to the site endpoint also propagate to all others endpoints!
+    fn propagate(&self, e: Endpoint) -> Vec<&EndpointSenders> {
+        if e == Endpoint::Site {
+            vec![&self.site, &self.lobby]
+        } else {
+            vec![self.by(e)]
+        }
+    }
+}
+
 /// Shared state of this Websocket server.
 struct App {
-    by_user: RwLock<HashMap::<UserId, Vec<Sender>>>,
+    endpoints: AppEndpoints,
     by_game: RwLock<HashMap::<GameId, Vec<Sender>>>,
-    by_sri: RwLock<HashMap::<Sri, Vec<Sender>>>,
-    by_endpoint: RwLock<HashMap::<Endpoint, Vec<Sender>>>,
     by_id: RwLock<HashMap::<SocketId, UserSocket>>,
     watched_games: RwLock<LruCache<GameId, WatchedGame>>,
     flags: [RwLock<HashSet<Sender>>; 2],
@@ -192,10 +230,8 @@ struct WatchedGame {
 impl App {
     fn new(redis_sink: channel::Sender<RedisIn>, sid_sink: channel::Sender<(SocketId, SessionCookie)>) -> App {
         App {
-            by_user: RwLock::new(HashMap::new()),
+            endpoints: AppEndpoints::new(),
             by_game: RwLock::new(HashMap::new()),
-            by_sri: RwLock::new(HashMap::new()),
-            by_endpoint: RwLock::new(HashMap::new()),
             by_id: RwLock::new(HashMap::new()),
             watched_games: RwLock::new(LruCache::new(5_000)),
             flags: [RwLock::new(HashSet::new()), RwLock::new(HashSet::new())],
@@ -208,6 +244,10 @@ impl App {
             member_count: AtomicU32::new(0),
             watching_mlat: RwLock::new(HashSet::new()),
         }
+    }
+
+    fn endpoint(&self, e: Endpoint) -> &EndpointSenders {
+        self.endpoints.by(e)
     }
 
     fn publish(&self, msg: RedisIn) {
@@ -226,12 +266,14 @@ impl App {
     fn received(&self, endpoint: Endpoint, msg: LilaOut) {
         match msg {
             LilaOut::TellUsers { users, payload } => {
-                let by_user = self.by_user.read();
-                for user in users {
-                    if let Some(entry) = by_user.get(&user) {
-                        for sender in entry {
-                            if let Err(err) = sender.send(Message::text(payload.to_string())) {
-                                log::error!("failed to tell {}: {:?}", user, err);
+                for senders in self.endpoints.propagate(endpoint) {
+                    let by_user = senders.by_user.read();
+                    for user in &users {
+                        if let Some(entry) = by_user.get(&user) {
+                            for sender in entry {
+                                if let Err(err) = sender.send(Message::text(payload.to_string())) {
+                                    log::error!("failed to tell {}: {:?}", user, err);
+                                }
                             }
                         }
                     }
@@ -248,7 +290,6 @@ impl App {
                     fen: fen.to_owned(),
                     lm: last_uci.to_owned()
                 });
-
                 let by_game = self.by_game.read();
                 if let Some(entry) = by_game.get(&game) {
                     let msg = Message::text(SocketIn::Fen {
@@ -267,7 +308,7 @@ impl App {
             LilaOut::MoveLatency(mlat) => {
                 // Respond with our stats (connection count).
                 self.publish_site(LilaIn::Connections(
-                    max(0, self.connection_count.load(Ordering::Relaxed)) as u32
+                        max(0, self.connection_count.load(Ordering::Relaxed)) as u32
                 ));
 
                 // Update stats.
@@ -291,24 +332,24 @@ impl App {
                 }
             }
             LilaOut::TellSri { sri, payload } => {
-                if let Some(entry) = self.by_sri.read().get(&sri) {
-                    for sender in entry {
-                        if let Err(err) = sender.send(payload) {
-                            log::error!("failed to send to sri: {:?}", err);
+                for senders in self.endpoints.propagate(endpoint) {
+                    if let Some(entry) = senders.by_sri.read().get(&sri) {
+                        for sender in entry {
+                            if let Err(err) = sender.send(payload) {
+                                log::error!("failed to send to sri: {:?}", err);
+                            }
                         }
                     }
                 }
             }
             LilaOut::DisconnectUser { uid } => {
-                let senders = {
-                    let by_user = self.by_user.read();
-                    let senders = by_user.get(&uid);
-                    senders.cloned()
-                };
-                if let Some(senders) = senders {
-                    for sender in senders {
-                        if let Err(err) = sender.close(CloseCode::Normal) {
-                            log::error!("failed to disconnect user: {:?}", err);
+                for endpoint_senders in self.endpoints.propagate(endpoint) {
+                    let senders = endpoint_senders.by_user.read().get(&uid).cloned();
+                    if let Some(senders) = senders {
+                        for sender in senders {
+                            if let Err(err) = sender.close(CloseCode::Normal) {
+                                log::error!("failed to disconnect user: {:?}", err);
+                            }
                         }
                     }
                 }
@@ -362,11 +403,14 @@ struct UserSocket {
 }
 
 impl UserSocket {
+    fn endpoint_senders(&self) -> &EndpointSenders {
+        self.app.endpoint(self.endpoint)
+    }
     fn set_user(&mut self, maybe_uid: Option<UserId>) {
         // Connected.
         let auth = match maybe_uid {
             Some(uid) => {
-                self.app.by_user.write()
+                self.endpoint_senders().by_user.write()
                     .entry(uid.clone())
                     .and_modify(|v| v.push(self.sender.clone()))
                     .or_insert_with(|| {
@@ -383,7 +427,7 @@ impl UserSocket {
         match mem::replace(&mut self.auth, auth) {
             // Disconnected.
             SocketAuth::Authenticated(uid) => {
-                let mut by_user = self.app.by_user.write();
+                let mut by_user = self.app.endpoint(self.endpoint).by_user.write();
                 let entry = by_user.get_mut(&uid).expect("uid in by_user");
                 let idx = entry.iter().position(|s| s.token() == self.sender.token()).expect("sender in by_user entry");
                 entry.swap_remove(idx);
@@ -466,7 +510,7 @@ impl Handler for Socket {
                     .map(|p| p.trim())
                     .find(|p| p.starts_with("lila2="))
             })
-            .and_then(|h| Cookie::parse(h).ok())
+        .and_then(|h| Cookie::parse(h).ok())
             .and_then(|c| {
                 let s = c.value();
                 let idx = s.find('-').map_or(0, |n| n + 1);
@@ -485,6 +529,7 @@ impl Handler for Socket {
             match Endpoint::from_str(path) {
                 Ok(endpoint) => {
                     self.endpoint = Some(endpoint);
+                    let endpoint_senders = self.app.endpoint(endpoint);
                     match serde_urlencoded::from_str::<QueryString>(query_string) {
                         Ok(QueryString { flag, sri }) => {
                             // Update by_id.
@@ -505,14 +550,8 @@ impl Handler for Socket {
 
                             // Add sri.
                             self.sri = Some(sri.clone());
-                            self.app.by_sri.write()
+                            endpoint_senders.by_sri.write()
                                 .entry(sri)
-                                .and_modify(|v| v.push(self.sender.clone()))
-                                .or_insert_with(|| vec![self.sender.clone()]);
-
-                            // Add endpoint.
-                            self.app.by_endpoint.write()
-                                .entry(endpoint)
                                 .and_modify(|v| v.push(self.sender.clone()))
                                 .or_insert_with(|| vec![self.sender.clone()]);
                         },
@@ -543,9 +582,15 @@ impl Handler for Socket {
             }
         }
 
+        // Update by_id.
+        let mut user_socket = self.app.by_id.write().remove(&self.socket_id).expect("user socket");
+        user_socket.set_user(None);
+
+        let endpoint_senders = user_socket.endpoint_senders();
+
         // Update by_sri.
         if let Some(sri) = self.sri.take() {
-            let mut by_sri = self.app.by_sri.write();
+            let mut by_sri = endpoint_senders.by_sri.write();
             let senders = by_sri.get_mut(&sri).expect("sri in by_sri");
             let our_token = self.sender.token();
             let idx = senders.iter().position(|s| s.token() == our_token).expect("sender in senders");
@@ -554,10 +599,6 @@ impl Handler for Socket {
                 by_sri.remove(&sri);
             }
         }
-
-        // Update by_id.
-        let mut user_socket = self.app.by_id.write().remove(&self.socket_id).expect("user socket");
-        user_socket.set_user(None);
 
         // Update by_game.
         let mut by_game = self.app.by_game.write();
@@ -603,8 +644,8 @@ impl Handler for Socket {
             match self.endpoint {
                 Some(Endpoint::Lobby) => {
                     let res = format!(r#"{{"t":"n","r":{},"d":{}}}"#,
-                        self.app.round_count.load(Ordering::Relaxed),
-                        self.app.member_count.load(Ordering::Relaxed)
+                                      self.app.round_count.load(Ordering::Relaxed),
+                                      self.app.member_count.load(Ordering::Relaxed)
                     );
                     return self.sender.send(Message::text(res));
                 }
@@ -667,11 +708,11 @@ impl Handler for Socket {
                                 v.push(self.sender.clone());
                                 log::debug!("also watching {:?} ({} watchers)", game, v.len());
                             })
-                            .or_insert_with(|| {
-                                log::debug!("start watching: {:?}", game);
-                                self.app.publish_site(LilaIn::Watch(&game));
-                                vec![self.sender.clone()]
-                            });
+                        .or_insert_with(|| {
+                            log::debug!("start watching: {:?}", game);
+                            self.app.publish_site(LilaIn::Watch(&game));
+                            vec![self.sender.clone()]
+                        });
                     }
                 }
                 if self.watching.len() > 20 {
@@ -684,7 +725,7 @@ impl Handler for Socket {
                 if d {
                     if watching_mlat.insert(self.sender.clone()) {
                         self.sender.send(SocketIn::MoveLatency(
-                            self.app.mlat.load(Ordering::Relaxed)
+                                self.app.mlat.load(Ordering::Relaxed)
                         ).to_json_string())?;
                     }
                 } else {
@@ -917,7 +958,7 @@ fn main() {
                     log_ignore: false
                 }
             })
-            .expect("valid settings");
+        .expect("valid settings");
 
         app.broadcaster.set(server.broadcaster()).expect("set broadcaster");
 
