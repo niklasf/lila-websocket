@@ -249,8 +249,9 @@ impl App {
                     max(0, self.connection_count.load(Ordering::Relaxed)) as u32
                 ));
                 // publish the buffered lags and clear them
-                self.publish(LilaIn::Lags(&self.lags.read()));
-                self.lags.write().clear();
+                let mut lags = self.lags.write();
+                self.publish(LilaIn::Lags(&lags));
+                lags.clear();
 
                 // Update stats.
                 self.mlat.store(mlat, Ordering::Relaxed);
