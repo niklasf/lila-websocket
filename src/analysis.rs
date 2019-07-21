@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 
 use arrayvec::ArrayString;
 
-use shakmaty::{Square, PositionError, Setup, Position, MoveList, Role, IllegalMoveError, File, MaterialSide, Material};
+use shakmaty::{Square, Castles, PositionError, Setup, Position, MoveList, Role, IllegalMoveError, File, MaterialSide, Material};
 use shakmaty::variants::{Variant, VariantPosition};
 use shakmaty::fen::{Fen, FenOpts, ParseFenError};
 use shakmaty::san::SanPlus;
@@ -100,10 +100,19 @@ fn dests(pos: &VariantPosition) -> String {
             if !mem::replace(&mut first, false) {
                 dests.push(' ');
             }
+
             dests.push(piotr(from_sq));
             for m in from_here {
                 dests.push(piotr(m.to()));
+
+                // add extra castling dests
+                if from_sq.file() == File::E && (m.to().file() == File::A || m.to().file() == File::H) {
+                    if let Some(castling_side) = m.castling_side() {
+                        dests.push(piotr(castling_side.king_to(pos.turn())));
+                    }
+                }
             }
+
         }
     }
 
@@ -120,6 +129,14 @@ fn drops(pos: &VariantPosition) -> Option<String> {
         Some(attacks::between(checker, king).into_iter().map(|sq| sq.to_string()).collect())
     } else {
         Some("".to_owned())
+    }
+}
+
+fn fix_castles(variant: Variant, fen: &mut Fen) {
+    if variant == Variant::RacingKings {
+        fen.castling_rights.clear();
+    } else if let Err(filtered_castles) = Castles::from_setup(fen) {
+        fen.castling_rights = filtered_castles.castling_rights();
     }
 }
 
@@ -259,7 +276,8 @@ pub struct GetDests {
 impl GetDests {
     pub fn respond(self) -> Result<DestsResponse, StepFailure> {
         let variant = Variant::from(self.variant.unwrap_or(VariantKey::Standard));
-        let fen: Fen = self.fen.parse()?;
+        let mut fen: Fen = self.fen.parse()?;
+        fix_castles(variant, &mut fen);
         let pos = VariantPosition::from_setup(variant, &fen)?;
 
         Ok(DestsResponse {
@@ -352,7 +370,8 @@ impl From<PlayDrop> for PlayStep {
 impl PlayStep {
     pub fn respond(self) -> Result<Node, StepFailure> {
         let variant = Variant::from(self.variant.unwrap_or(VariantKey::Standard));
-        let fen: Fen = self.fen.parse()?;
+        let mut fen: Fen = self.fen.parse()?;
+        fix_castles(variant, &mut fen);
         let mut pos = VariantPosition::from_setup(variant, &fen)?;
 
         let m = self.uci.to_move(&pos)?;

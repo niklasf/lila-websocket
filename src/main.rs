@@ -27,7 +27,6 @@ use smallvec::SmallVec;
 use std::sync::atomic::{AtomicI32, AtomicU32, Ordering};
 use once_cell::sync::OnceCell;
 use parking_lot::RwLock;
-use lru::LruCache;
 use crossbeam::channel;
 use ratelimit_meter::KeyedRateLimiter;
 
@@ -125,8 +124,18 @@ enum SocketOut {
     EvalGet, // opaque
     #[serde(rename = "evalPut")]
     EvalPut, // opaque
-    #[serde(rename = "ping")]
-    ChallengePing,
+    #[serde(alias = "ping")]
+    #[serde(alias = "join")]
+    #[serde(alias = "cancel")]
+    #[serde(alias = "joinSeek")]
+    #[serde(alias = "cancelSeek")]
+    #[serde(alias = "idle")]
+    #[serde(alias = "poolIn")]
+    #[serde(alias = "poolOut")]
+    #[serde(alias = "hookIn")]
+    #[serde(alias = "hookOut")]
+    #[serde(alias = "flag")] // round msg?
+    UnexpectedMessage,
 }
 
 /// Session cookie from Play framework.
@@ -153,7 +162,7 @@ struct App {
     by_game: RwLock<HashMap::<GameId, Vec<Sender>>>,
     by_sri: RwLock<HashMap::<Sri, Vec<Sender>>>,
     by_id: RwLock<HashMap::<SocketId, UserSocket>>,
-    watched_games: RwLock<LruCache<GameId, WatchedGame>>,
+    watched_games: RwLock<HashMap<GameId, WatchedGame>>,
     flags: [RwLock<HashSet<Sender>>; 2],
     lags: RwLock<HashMap::<UserId, u32>>, // buffer of user lags, to send several at once
     mlat: AtomicU32,
@@ -164,6 +173,7 @@ struct App {
     connection_count: AtomicI32, // signed to allow relaxed writes with underflow
 }
 
+#[derive(Debug)]
 struct WatchedGame {
     fen: String,
     lm: String,
@@ -176,7 +186,7 @@ impl App {
             by_game: RwLock::new(HashMap::new()),
             by_sri: RwLock::new(HashMap::new()),
             by_id: RwLock::new(HashMap::new()),
-            watched_games: RwLock::new(LruCache::new(5_000)),
+            watched_games: RwLock::new(HashMap::new()),
             flags: [RwLock::new(HashSet::new()), RwLock::new(HashSet::new())],
             lags: RwLock::new(HashMap::new()),
             redis_sink,
@@ -213,7 +223,7 @@ impl App {
                 }
             }
             LilaOut::Move { game, fen, last_uci } => {
-                self.watched_games.write().put(game.clone(), WatchedGame {
+                self.watched_games.write().insert(game.clone(), WatchedGame {
                     fen: fen.to_owned(),
                     lm: last_uci.to_owned()
                 });
@@ -302,6 +312,7 @@ struct Socket {
     flag: Option<Flag>,
     sri: Option<Sri>,
     idle_timeout: Option<Timeout>,
+    log_ignore: bool // stop logging errors from this client
 }
 
 /// Uniquely identifies a socket connection over the entire runtime of the
@@ -510,6 +521,7 @@ impl Handler for Socket {
             watchers.swap_remove(idx);
             if watchers.is_empty() {
                 by_game.remove(&game);
+                self.app.watched_games.write().remove(&game);
                 log::debug!("no more watchers for {:?}", game);
                 self.app.publish(LilaIn::Unwatch(&game));
             }
@@ -524,9 +536,8 @@ impl Handler for Socket {
     fn on_message(&mut self, msg: Message) -> ws::Result<()> {
         if let Some(client_addr) = self.client_addr {
             if self.rate_limiter.check(client_addr).is_err() {
-                if !self.rate_limited_once {
+                if !mem::replace(&mut self.rate_limited_once, true) {
                     log::warn!("socket of client {} rate limited (will log only once)", client_addr);
-                    self.rate_limited_once = true;
                 }
                 return Ok(()); // ignore message
             }
@@ -578,7 +589,7 @@ impl Handler for Socket {
                     if self.watching.insert(game.clone()) {
 
                         // If cached, send current game state immediately.
-                        if let Some(state) = self.app.watched_games.read().peek(&game) {
+                        if let Some(state) = self.app.watched_games.read().get(&game) {
                             self.sender.send(SocketIn::Fen {
                                 id: &game,
                                 fen: &state.fen,
@@ -661,8 +672,10 @@ impl Handler for Socket {
                 }
                 Ok(())
             }
-            Ok(SocketOut::ChallengePing) => {
-                log::warn!("unexpected challenge ping (ua: {:?}): {}", self.user_agent, msg);
+            Ok(SocketOut::UnexpectedMessage) => {
+                if !mem::replace(&mut self.log_ignore, true) {
+                    log::warn!("unexpected message (ua: {:?}): {}", self.user_agent, msg);
+                }
                 Ok(())
             }
             Err(err) => {
@@ -741,7 +754,7 @@ fn main() {
                 let maybe_uid = match session_store.find_one(Some(query), Some(opts)) {
                     Ok(Some(doc)) => doc.get_str("user").ok().and_then(|s| UserId::new(s).ok()),
                     Ok(None) => {
-                        log::info!("session store does not have sid: {}", cookie.session_id);
+                        log::debug!("session store does not have sid: {}", cookie.session_id);
                         None
                     },
                     Err(err) => {
@@ -817,6 +830,7 @@ fn main() {
                     flag: None, // set during handshake
                     watching: HashSet::new(),
                     idle_timeout: None, // set during handshake
+                    log_ignore: false
                 }
             })
             .expect("valid settings");
