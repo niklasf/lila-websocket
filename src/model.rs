@@ -65,12 +65,12 @@ pub struct InvalidUserId;
 impl UserId {
     pub fn new(inner: &str) -> Result<UserId, InvalidUserId> {
         if !inner.is_empty() && inner.len() <= 30 &&
-           inner.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
-        {
-            Ok(UserId(inner.to_lowercase()))
-        } else {
-            Err(InvalidUserId)
-        }
+            inner.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+            {
+                Ok(UserId(inner.to_lowercase()))
+            } else {
+                Err(InvalidUserId)
+            }
     }
 
     pub fn as_str(&self) -> &str {
@@ -157,5 +157,53 @@ impl FromStr for Flag {
             "simul" => Flag::Simul,
             _ => return Err(UnknownFlag),
         })
+    }
+}
+
+/// The type of socket
+#[derive(Deserialize, Debug, Clone, Eq, PartialEq, Hash, Copy)]
+pub enum Endpoint {
+    #[serde(rename = "site")]
+    Site,
+    #[serde(rename = "lobby")]
+    Lobby,
+}
+
+#[derive(Debug)]
+pub struct UnknownEndpoint;
+
+impl FromStr for Endpoint {
+    type Err = UnknownEndpoint;
+
+    fn from_str(s: &str) -> Result<Endpoint, UnknownEndpoint> {
+        Ok(match s {
+            "/socket/v4" | "/analysis/socket/v4" => Endpoint::Site,
+            "/lobby/socket/v4" => Endpoint::Lobby,
+            _ => return Err(UnknownEndpoint),
+        })
+    }
+}
+
+impl Endpoint {
+    pub fn send_connect_sri(&self) -> bool {
+        match self {
+            Endpoint::Site => false,
+            Endpoint::Lobby => true
+        }
+    }
+    pub fn chan_in(&self) -> String {
+        match self {
+            Endpoint::Site => "site-in".to_string(),
+            Endpoint::Lobby => "lobby-in".to_string()
+        }
+    }
+    pub fn all() -> Vec<Endpoint> {
+        vec![Endpoint::Site, Endpoint::Lobby]
+    }
+    pub fn by_chan(chan: &str) -> Endpoint {
+        match chan {
+            "lobby-in" | "lobby-out" => Endpoint::Lobby,
+            _ => Endpoint::Site
+        }
     }
 }

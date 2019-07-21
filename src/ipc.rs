@@ -35,6 +35,8 @@ pub enum LilaOut<'a> {
         uid: UserId,
     },
     MoveLatency(u32),
+    MemberNb(u32),
+    RoundNb(u32),
 }
 
 impl<'a> LilaOut<'a> {
@@ -81,6 +83,12 @@ impl<'a> LilaOut<'a> {
             }
             ("mlat", Some(value)) => {
                 LilaOut::MoveLatency(value.parse().map_err(|_| IpcError)?)
+            }
+            ("member/nb", Some(value)) => {
+                LilaOut::MemberNb(value.parse().map_err(|_| IpcError)?)
+            },
+            ("round/nb", Some(value)) => {
+                LilaOut::RoundNb(value.parse().map_err(|_| IpcError)?)
             },
             _ => return Err(IpcError),
         })
@@ -92,6 +100,8 @@ impl<'a> LilaOut<'a> {
 pub enum LilaIn<'a> {
     Connect(&'a UserId),
     Disconnect(&'a UserId),
+    ConnectSri(&'a Sri, Option<&'a UserId>),
+    DisconnectSri(&'a Sri),
     DisconnectAll,
     Notified(&'a UserId),
     Watch(&'a GameId),
@@ -107,6 +117,11 @@ impl<'a> fmt::Display for LilaIn<'a> {
         match self {
             LilaIn::Connect(uid) => write!(f, "connect {}", uid),
             LilaIn::Disconnect(uid) => write!(f, "disconnect {}", uid),
+            LilaIn::ConnectSri(sri, maybe_uid) => match maybe_uid {
+                Some(uid) => write!(f, "connect/sri {} {}", sri, uid),
+                None => write!(f, "connect/sri {}", sri)
+            },
+            LilaIn::DisconnectSri(sri) => write!(f, "disconnect/sri {}", sri),
             LilaIn::DisconnectAll => write!(f, "disconnect/all"),
             LilaIn::Notified(uid) => write!(f, "notified {}", uid),
             LilaIn::Watch(game) => write!(f, "watch {}", game),
