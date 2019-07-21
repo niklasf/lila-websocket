@@ -27,7 +27,6 @@ env_logger = "0.6"
 bson = "0.13"
 structopt = "0.2"
 parking_lot = "0.8"
-lru = "0.1"
 arrayvec = { version = "0.4", features = ["serde-1"] }
 smallvec = "0.6"
 ratelimit_meter = "4.1"
