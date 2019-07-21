@@ -27,7 +27,6 @@ use smallvec::SmallVec;
 use std::sync::atomic::{AtomicI32, AtomicU32, Ordering};
 use once_cell::sync::OnceCell;
 use parking_lot::RwLock;
-use lru::LruCache;
 use crossbeam::channel;
 use ratelimit_meter::KeyedRateLimiter;
 
@@ -163,7 +162,7 @@ struct App {
     by_game: RwLock<HashMap::<GameId, Vec<Sender>>>,
     by_sri: RwLock<HashMap::<Sri, Vec<Sender>>>,
     by_id: RwLock<HashMap::<SocketId, UserSocket>>,
-    watched_games: RwLock<LruCache<GameId, WatchedGame>>,
+    watched_games: RwLock<HashMap<GameId, WatchedGame>>,
     flags: [RwLock<HashSet<Sender>>; 2],
     mlat: AtomicU32,
     watching_mlat: RwLock<HashSet<Sender>>,
@@ -186,7 +185,7 @@ impl App {
             by_game: RwLock::new(HashMap::new()),
             by_sri: RwLock::new(HashMap::new()),
             by_id: RwLock::new(HashMap::new()),
-            watched_games: RwLock::new(LruCache::new(5_000)),
+            watched_games: RwLock::new(HashMap::new()),
             flags: [RwLock::new(HashSet::new()), RwLock::new(HashSet::new())],
             redis_sink,
             sid_sink,
@@ -222,7 +221,7 @@ impl App {
                 }
             }
             LilaOut::Move { game, fen, last_uci } => {
-                self.watched_games.write().put(game.clone(), WatchedGame {
+                self.watched_games.write().insert(game.clone(), WatchedGame {
                     fen: fen.to_owned(),
                     lm: last_uci.to_owned()
                 });
@@ -517,7 +516,7 @@ impl Handler for Socket {
             watchers.swap_remove(idx);
             if watchers.is_empty() {
                 by_game.remove(&game);
-                self.app.watched_games.write().pop(&game);
+                self.app.watched_games.write().remove(&game);
                 log::debug!("no more watchers for {:?}", game);
                 self.app.publish(LilaIn::Unwatch(&game));
             }
@@ -585,7 +584,7 @@ impl Handler for Socket {
                     if self.watching.insert(game.clone()) {
 
                         // If cached, send current game state immediately.
-                        if let Some(state) = self.app.watched_games.read().peek(&game) {
+                        if let Some(state) = self.app.watched_games.read().get(&game) {
                             self.sender.send(SocketIn::Fen {
                                 id: &game,
                                 fen: &state.fen,
