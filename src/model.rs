@@ -65,12 +65,12 @@ pub struct InvalidUserId;
 impl UserId {
     pub fn new(inner: &str) -> Result<UserId, InvalidUserId> {
         if !inner.is_empty() && inner.len() <= 30 &&
-           inner.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
-        {
-            Ok(UserId(inner.to_lowercase()))
-        } else {
-            Err(InvalidUserId)
-        }
+            inner.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+            {
+                Ok(UserId(inner.to_lowercase()))
+            } else {
+                Err(InvalidUserId)
+            }
     }
 
     pub fn as_str(&self) -> &str {
@@ -161,7 +161,7 @@ impl FromStr for Flag {
 }
 
 /// The type of socket
-#[derive(Deserialize, Debug, Copy, Clone)]
+#[derive(Deserialize, Debug, Clone, Eq, PartialEq, Hash, Copy)]
 pub enum Endpoint {
     #[serde(rename = "site")]
     Site,
@@ -199,5 +199,11 @@ impl Endpoint {
     }
     pub fn all() -> Vec<Endpoint> {
         vec![Endpoint::Site, Endpoint::Lobby]
+    }
+    pub fn by_chan(chan: &str) -> Endpoint {
+        match chan {
+            "lobby-in" | "lobby-out" => Endpoint::Lobby,
+            _ => Endpoint::Site
+        }
     }
 }

@@ -169,6 +169,7 @@ struct App {
     by_user: RwLock<HashMap::<UserId, Vec<Sender>>>,
     by_game: RwLock<HashMap::<GameId, Vec<Sender>>>,
     by_sri: RwLock<HashMap::<Sri, Vec<Sender>>>,
+    by_endpoint: RwLock<HashMap::<Endpoint, Vec<Sender>>>,
     by_id: RwLock<HashMap::<SocketId, UserSocket>>,
     watched_games: RwLock<LruCache<GameId, WatchedGame>>,
     flags: [RwLock<HashSet<Sender>>; 2],
@@ -194,6 +195,7 @@ impl App {
             by_user: RwLock::new(HashMap::new()),
             by_game: RwLock::new(HashMap::new()),
             by_sri: RwLock::new(HashMap::new()),
+            by_endpoint: RwLock::new(HashMap::new()),
             by_id: RwLock::new(HashMap::new()),
             watched_games: RwLock::new(LruCache::new(5_000)),
             flags: [RwLock::new(HashSet::new()), RwLock::new(HashSet::new())],
@@ -221,7 +223,7 @@ impl App {
         self.publish_chan("site-in".to_string(), msg)
     }
 
-    fn received(&self, msg: LilaOut) {
+    fn received(&self, endpoint: Endpoint, msg: LilaOut) {
         match msg {
             LilaOut::TellUsers { users, payload } => {
                 let by_user = self.by_user.read();
@@ -505,6 +507,12 @@ impl Handler for Socket {
                             self.sri = Some(sri.clone());
                             self.app.by_sri.write()
                                 .entry(sri)
+                                .and_modify(|v| v.push(self.sender.clone()))
+                                .or_insert_with(|| vec![self.sender.clone()]);
+
+                            // Add endpoint.
+                            self.app.by_endpoint.write()
+                                .entry(endpoint)
                                 .and_modify(|v| v.push(self.sender.clone()))
                                 .or_insert_with(|| vec![self.sender.clone()]);
                         },
@@ -859,10 +867,11 @@ fn main() {
             incoming.subscribe("lobby-out").expect("subscribe lobby-out");
 
             loop {
-                let msg = incoming.get_message()
-                    .expect("get message")
+                let m = incoming.get_message().expect("get message");
+                let msg = m
                     .get_payload::<String>()
                     .expect("get payload");
+                let endpoint = Endpoint::by_chan(m.get_channel_name());
 
                 match LilaOut::parse(&msg) {
                     Ok(msg) => {
@@ -872,7 +881,7 @@ fn main() {
                             rate_limiter.cleanup(Duration::from_secs(60));
                         }
 
-                        app.received(msg);
+                        app.received(endpoint, msg);
                     },
                     Err(_) => log::error!("invalid message from lila: {}", msg),
                 }
