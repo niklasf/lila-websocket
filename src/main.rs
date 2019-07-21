@@ -26,7 +26,6 @@ use std::str::FromStr;
 use smallvec::SmallVec;
 
 use std::sync::atomic::{AtomicI32, AtomicU32, Ordering};
-use once_cell::sync::OnceCell;
 use parking_lot::RwLock;
 use lru::LruCache;
 use crossbeam::channel;
@@ -166,12 +165,14 @@ const IDLE_TIMEOUT_MS: u64 = 15_000;
 
 /// Sender maps for each endpoint
 struct EndpointSenders {
+    all: RwLock<Vec<Sender>>,
     by_user: RwLock<HashMap::<UserId, Vec<Sender>>>,
     by_sri: RwLock<HashMap::<Sri, Vec<Sender>>>
 }
 impl EndpointSenders {
     fn new() -> EndpointSenders {
         EndpointSenders {
+            all: RwLock::new(Vec::new()),
             by_user: RwLock::new(HashMap::new()),
             by_sri: RwLock::new(HashMap::new())
         }
@@ -217,7 +218,6 @@ struct App {
     watching_mlat: RwLock<HashSet<Sender>>,
     redis_sink: channel::Sender<RedisIn>,
     sid_sink: channel::Sender<(SocketId, SessionCookie)>,
-    broadcaster: OnceCell<Sender>,
     connection_count: AtomicI32, // signed to allow relaxed writes with underflow
 }
 
@@ -237,7 +237,6 @@ impl App {
             flags: [RwLock::new(HashSet::new()), RwLock::new(HashSet::new())],
             redis_sink,
             sid_sink,
-            broadcaster: OnceCell::new(),
             connection_count: AtomicI32::new(0),
             mlat: AtomicU32::new(u32::max_value()),
             round_count: AtomicU32::new(0),
@@ -281,8 +280,12 @@ impl App {
             }
             LilaOut::TellAll { payload } => {
                 let msg = Message::text(payload.to_string());
-                if let Err(err) = self.broadcaster.get().expect("broadcaster").send(msg) {
-                    log::error!("failed to broadcast: {:?}", err);
+                for senders in self.endpoints.propagate(endpoint) {
+                    for sender in senders.all.read().iter() {
+                        if let Err(err) = sender.send(msg.clone()) {
+                            log::error!("failed to send fen: {:?}", err);
+                        }
+                    }
                 }
             }
             LilaOut::Move { game, fen, last_uci } => {
@@ -554,6 +557,9 @@ impl Handler for Socket {
                                 .entry(sri)
                                 .and_modify(|v| v.push(self.sender.clone()))
                                 .or_insert_with(|| vec![self.sender.clone()]);
+
+                            // Add all.
+                            endpoint_senders.all.write().push(self.sender.clone());
                         },
                         Err(err) => {
                             log::warn!("invalid query string ({:?}): {}", err, query_string);
@@ -959,8 +965,6 @@ fn main() {
                 }
             })
         .expect("valid settings");
-
-        app.broadcaster.set(server.broadcaster()).expect("set broadcaster");
 
         server.listen(&opt.bind).expect("ws listen");
     }).expect("scope");
