@@ -113,11 +113,11 @@ impl<'a> fmt::Display for LilaIn<'a> {
             LilaIn::Unwatch(game) => write!(f, "unwatch {}", game),
             LilaIn::Connections(n) => write!(f, "connections {}", n),
             LilaIn::Lags(lags) => {
-                let mut s = String::new();
+                write!(f, "lags ")?;
                 for (uid, lag) in lags.iter() { 
-                    s.push_str(format!("{}:{},", uid, lag).as_str())
+                    write!(f, "{}:{},", uid, lag)?;
                 }
-                write!(f, "lags {}", s)
+                Ok(())
             }
             LilaIn::Friends(uid) => write!(f, "friends {}", uid),
             LilaIn::TellSri(sri, uid, payload) =>
