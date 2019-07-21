@@ -490,6 +490,12 @@ impl UserSocket {
     fn publish<'a>(&self, msg: LilaIn<'a>) {
         self.app.publish_endpoint(&self.endpoint, msg)
     }
+
+    fn maybe_send_connect_sri(&self) {
+        if self.endpoint.send_connect_sri() {
+            self.publish(LilaIn::ConnectSri(&self.sri, self.user_id()))
+        }
+    }
 }
 
 impl Handler for Socket {
@@ -520,12 +526,6 @@ impl Handler for Socket {
                 serde_urlencoded::from_str::<SessionCookie>(&s[idx..]).ok()
             });
 
-        // Request authentication.
-        let auth = if maybe_cookie.is_some() { SocketAuth::Requested } else { SocketAuth::Anonymous };
-        if let Some(cookie) = maybe_cookie {
-            self.app.sid_sink.send((self.socket_id, cookie)).expect("auth request");
-        }
-
         // Parse query string.
         let mut uri = handshake.request.resource().splitn(2, '?');
         if let (path, Some(query_string)) = (uri.next().unwrap(), uri.next()) {
@@ -535,6 +535,7 @@ impl Handler for Socket {
                     let endpoint_senders = self.app.endpoint(endpoint);
                     match serde_urlencoded::from_str::<QueryString>(query_string) {
                         Ok(QueryString { flag, sri }) => {
+                            let auth = if maybe_cookie.is_some() { SocketAuth::Requested } else { SocketAuth::Anonymous };
                             // Update by_id.
                             self.app.by_id.write().insert(self.socket_id, UserSocket {
                                 app: self.app,
@@ -545,6 +546,18 @@ impl Handler for Socket {
                                 pending_following_onlines: false,
                                 sender: self.sender.clone(),
                             });
+                            // get a ref to the user_socket even tho I just created it...
+                            // dunno how to make that right
+                            let sockets = self.app.by_id.read();
+                            let user_socket = sockets.get(&self.socket_id).expect("user socket");
+
+                            // Request authentication.
+                            if let Some(cookie) = maybe_cookie {
+                                self.app.sid_sink.send((self.socket_id, cookie)).expect("auth request");
+                            } else {
+                                user_socket.maybe_send_connect_sri();
+                            }
+
                             // Subscribe to flag.
                             self.flag = flag;
                             if let Some(flag) = flag {
@@ -891,9 +904,7 @@ fn main() {
                 let mut write_guard = app.by_id.write();
                 if let Some(user_socket) = write_guard.get_mut(&socket_id) {
                     user_socket.set_user(maybe_uid.clone());
-                    if user_socket.endpoint.send_connect_sri() {
-                        user_socket.publish(LilaIn::ConnectSri(&user_socket.sri, maybe_uid.as_ref()))
-                    }
+                    user_socket.maybe_send_connect_sri();
                 }
             }
         }).unwrap();
