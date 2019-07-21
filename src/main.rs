@@ -211,6 +211,7 @@ struct App {
     by_id: RwLock<HashMap::<SocketId, UserSocket>>,
     watched_games: RwLock<HashMap<GameId, WatchedGame>>,
     flags: [RwLock<HashSet<Sender>>; 2],
+    lags: RwLock<HashMap::<UserId, u32>>, // buffer of user lags, to send several at once
     mlat: AtomicU32,
     round_count: AtomicU32,
     member_count: AtomicU32,
@@ -234,6 +235,7 @@ impl App {
             by_id: RwLock::new(HashMap::new()),
             watched_games: RwLock::new(HashMap::new()),
             flags: [RwLock::new(HashSet::new()), RwLock::new(HashSet::new())],
+            lags: RwLock::new(HashMap::new()),
             redis_sink,
             sid_sink,
             connection_count: AtomicI32::new(0),
@@ -312,6 +314,10 @@ impl App {
                 self.publish_site(LilaIn::Connections(
                         max(0, self.connection_count.load(Ordering::Relaxed)) as u32
                 ));
+                // publish the buffered lags and clear them
+                let mut lags = self.lags.write();
+                self.publish(LilaIn::Lags(&lags));
+                lags.clear();
 
                 // Update stats.
                 self.mlat.store(mlat, Ordering::Relaxed);
@@ -457,7 +463,7 @@ impl UserSocket {
 
     fn on_ping(&self, lag: u32) {
         if let SocketAuth::Authenticated(ref uid) = self.auth {
-            self.publish(LilaIn::Lag(uid, lag));
+            self.app.lags.write().insert(uid.clone(), lag);
         }
     }
 
