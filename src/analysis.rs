@@ -386,7 +386,7 @@ impl PlayStep {
                 dests: dests(&pos),
                 drops: drops(&pos),
                 check: pos.is_check(),
-                fen: FenOpts::default().scid(true).fen(&pos),
+                fen: FenOpts::default().scid(true).promoted(variant == Variant::Crazyhouse).fen(&pos),
                 ply: (pos.fullmoves() - 1) * 2 + pos.turn().fold(0, 1),
                 opening: lookup_opening(Fen::from_setup(&pos)).filter(|_| is_opening_sensible(variant)),
                 crazy: pos.pockets().map(CrazyData::from)
