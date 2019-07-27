@@ -316,7 +316,7 @@ impl App {
                 ));
                 // publish the buffered lags and clear them
                 let mut lags = self.lags.write();
-                self.publish(LilaIn::Lags(&lags));
+                self.publish_site(LilaIn::Lags(&lags));
                 lags.clear();
 
                 // Update stats.
