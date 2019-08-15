@@ -722,7 +722,7 @@ fn main() {
         // Thread for outgoing messages to lila.
         let opt_inner = opt.clone();
         s.builder().name("redis sink".to_owned()).spawn(move |_| {
-            let redis = redis::Client::open(opt_inner.redis.as_str())
+            let mut redis = redis::Client::open(opt_inner.redis.as_str())
                 .expect("redis open for publish")
                 .get_connection()
                 .expect("redis connection for publish");
